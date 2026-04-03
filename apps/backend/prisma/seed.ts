@@ -372,6 +372,420 @@ async function main() {
 
   console.log("  ✓ Set weekly availability for all staff");
 
+  // ── Shifts, Assignments, Swap Requests & Notifications ───────────────────
+  console.log("Creating shifts, assignments, and notifications...");
+
+  const seedNow = new Date();
+
+  /** Returns a Date `n` hours offset from seedNow */
+  const h = (n: number) => new Date(seedNow.getTime() + n * 3_600_000);
+
+  /** Returns midnight (local) on `dayOffset` days from today — for the `date` field */
+  function midnight(dayOffset: number): Date {
+    const d = new Date(seedNow);
+    d.setDate(d.getDate() + dayOffset);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }
+
+  /** Returns a specific hour on `dayOffset` days from today */
+  function at(dayOffset: number, hour: number): Date {
+    const d = new Date(seedNow);
+    d.setDate(d.getDate() + dayOffset);
+    d.setHours(hour, 0, 0, 0);
+    return d;
+  }
+
+  // ── Currently active shifts (on duty right now) ──
+  const activeShift1 = await prisma.shift.create({
+    data: {
+      locationId: downtown.id,
+      date: midnight(0),
+      startTime: h(-2),
+      endTime: h(4),
+      requiredSkillId: skills.bartender.id,
+      headcount: 2,
+      status: "PUBLISHED",
+      createdById: admin.id,
+    },
+  });
+  const activeShift2 = await prisma.shift.create({
+    data: {
+      locationId: midtown.id,
+      date: midnight(0),
+      startTime: h(-1),
+      endTime: h(5),
+      requiredSkillId: skills.server.id,
+      headcount: 1,
+      status: "PUBLISHED",
+      createdById: admin.id,
+    },
+  });
+  const activeShift3 = await prisma.shift.create({
+    data: {
+      locationId: westside.id,
+      date: midnight(0),
+      startTime: h(-3),
+      endTime: h(3),
+      requiredSkillId: skills.line_cook.id,
+      headcount: 1,
+      status: "PUBLISHED",
+      createdById: admin.id,
+    },
+  });
+
+  // ── Past-week shifts for Carlos (Mon–Wed this week → 30 h)
+  // Combined with today's 6 h active shift = 36 h total → OVERTIME
+  const carlosShifts = await Promise.all([
+    prisma.shift.create({
+      data: {
+        locationId: midtown.id,
+        date: midnight(-4),
+        startTime: at(-4, 9),
+        endTime: at(-4, 19),
+        requiredSkillId: skills.line_cook.id,
+        headcount: 1,
+        status: "PUBLISHED",
+        createdById: admin.id,
+      },
+    }),
+    prisma.shift.create({
+      data: {
+        locationId: midtown.id,
+        date: midnight(-3),
+        startTime: at(-3, 9),
+        endTime: at(-3, 19),
+        requiredSkillId: skills.line_cook.id,
+        headcount: 1,
+        status: "PUBLISHED",
+        createdById: admin.id,
+      },
+    }),
+    prisma.shift.create({
+      data: {
+        locationId: westside.id,
+        date: midnight(-2),
+        startTime: at(-2, 9),
+        endTime: at(-2, 19),
+        requiredSkillId: skills.line_cook.id,
+        headcount: 1,
+        status: "PUBLISHED",
+        createdById: admin.id,
+      },
+    }),
+  ]);
+
+  // ── Past-week shifts for Ryan (Mon–Thu this week → 36 h total → OVERTIME)
+  const ryanShifts = await Promise.all([
+    prisma.shift.create({
+      data: {
+        locationId: midtown.id,
+        date: midnight(-4),
+        startTime: at(-4, 10),
+        endTime: at(-4, 19),
+        requiredSkillId: skills.server.id,
+        headcount: 1,
+        status: "PUBLISHED",
+        createdById: admin.id,
+      },
+    }),
+    prisma.shift.create({
+      data: {
+        locationId: midtown.id,
+        date: midnight(-3),
+        startTime: at(-3, 10),
+        endTime: at(-3, 19),
+        requiredSkillId: skills.server.id,
+        headcount: 1,
+        status: "PUBLISHED",
+        createdById: admin.id,
+      },
+    }),
+    prisma.shift.create({
+      data: {
+        locationId: midtown.id,
+        date: midnight(-2),
+        startTime: at(-2, 10),
+        endTime: at(-2, 19),
+        requiredSkillId: skills.server.id,
+        headcount: 1,
+        status: "PUBLISHED",
+        createdById: admin.id,
+      },
+    }),
+    prisma.shift.create({
+      data: {
+        locationId: midtown.id,
+        date: midnight(-1),
+        startTime: at(-1, 10),
+        endTime: at(-1, 19),
+        requiredSkillId: skills.server.id,
+        headcount: 1,
+        status: "PUBLISHED",
+        createdById: admin.id,
+      },
+    }),
+  ]);
+
+  // ── Upcoming shifts (next 24 h, not yet started) ──
+  const upcoming1 = await prisma.shift.create({
+    data: {
+      locationId: downtown.id,
+      date: midnight(0),
+      startTime: h(2),
+      endTime: h(10),
+      requiredSkillId: skills.server.id,
+      headcount: 2,
+      status: "PUBLISHED",
+      createdById: admin.id,
+    },
+  });
+  await prisma.shift.create({
+    data: {
+      locationId: marina.id,
+      date: midnight(0),
+      startTime: h(4),
+      endTime: h(12),
+      requiredSkillId: skills.host.id,
+      headcount: 1,
+      status: "PUBLISHED",
+      createdById: admin.id,
+    },
+  });
+  const upcoming3 = await prisma.shift.create({
+    data: {
+      locationId: midtown.id,
+      date: midnight(0),
+      startTime: h(6),
+      endTime: h(14),
+      requiredSkillId: skills.bartender.id,
+      headcount: 2,
+      status: "PUBLISHED",
+      createdById: admin.id,
+    },
+  });
+
+  // ── Future unassigned shifts (> 24 h away) ──
+  await prisma.shift.createMany({
+    data: [
+      {
+        locationId: downtown.id,
+        date: midnight(2),
+        startTime: h(26),
+        endTime: h(34),
+        requiredSkillId: skills.line_cook.id,
+        headcount: 2,
+        status: "PUBLISHED",
+        createdById: admin.id,
+      },
+      {
+        locationId: westside.id,
+        date: midnight(2),
+        startTime: h(28),
+        endTime: h(36),
+        requiredSkillId: skills.server.id,
+        headcount: 1,
+        status: "PUBLISHED",
+        createdById: admin.id,
+      },
+    ],
+  });
+
+  // ── Assignments ──────────────────────────────────────────────────────────
+  // On-duty now
+  const assignMike = await prisma.shiftAssignment.create({
+    data: {
+      shiftId: activeShift1.id,
+      userId: staff.mike.id,
+      assignedById: admin.id,
+      status: "CONFIRMED",
+    },
+  });
+  await prisma.shiftAssignment.create({
+    data: {
+      shiftId: activeShift2.id,
+      userId: staff.emily.id,
+      assignedById: admin.id,
+      status: "CONFIRMED",
+    },
+  });
+  await prisma.shiftAssignment.create({
+    data: {
+      shiftId: activeShift3.id,
+      userId: staff.carlos.id,
+      assignedById: admin.id,
+      status: "CONFIRMED",
+    },
+  });
+
+  // Carlos overtime – Mon/Tue (midtown), Wed (westside)
+  await prisma.shiftAssignment.createMany({
+    data: [
+      {
+        shiftId: carlosShifts[0].id,
+        userId: staff.carlos.id,
+        assignedById: manager1.id,
+        status: "CONFIRMED",
+      },
+      {
+        shiftId: carlosShifts[1].id,
+        userId: staff.carlos.id,
+        assignedById: manager1.id,
+        status: "CONFIRMED",
+      },
+      {
+        shiftId: carlosShifts[2].id,
+        userId: staff.carlos.id,
+        assignedById: manager2.id,
+        status: "CONFIRMED",
+      },
+    ],
+  });
+
+  // Ryan overtime – Mon–Thu (midtown)
+  await prisma.shiftAssignment.createMany({
+    data: ryanShifts.map((s) => ({
+      shiftId: s.id,
+      userId: staff.ryan.id,
+      assignedById: manager1.id,
+      status: "CONFIRMED" as const,
+    })),
+  });
+
+  // Mike gets 1 of 2 slots on upcoming3 → still shows as unassigned
+  const assignMikeUpcoming = await prisma.shiftAssignment.create({
+    data: {
+      shiftId: upcoming3.id,
+      userId: staff.mike.id,
+      assignedById: admin.id,
+      status: "ASSIGNED",
+    },
+  });
+
+  // David gets slot on upcoming1 (1 of 2) → still unassigned
+  await prisma.shiftAssignment.create({
+    data: {
+      shiftId: upcoming1.id,
+      userId: staff.david.id,
+      assignedById: admin.id,
+      status: "ASSIGNED",
+    },
+  });
+
+  console.log("  ✓ Created 12 shifts with assignments");
+
+  // ── Swap Requests ────────────────────────────────────────────────────────
+  // Mike wants to drop his on-duty shift (pending, visible to admin + James)
+  await prisma.swapRequest.create({
+    data: {
+      type: "DROP",
+      requestorUserId: staff.mike.id,
+      requestorAssignmentId: assignMike.id,
+      status: "PENDING",
+      expiresAt: h(48),
+    },
+  });
+  // Mike also wants to drop his upcoming shift
+  await prisma.swapRequest.create({
+    data: {
+      type: "DROP",
+      requestorUserId: staff.mike.id,
+      requestorAssignmentId: assignMikeUpcoming.id,
+      status: "PENDING",
+      expiresAt: h(24),
+    },
+  });
+
+  console.log("  ✓ Created 2 pending swap requests");
+
+  // ── Notifications ────────────────────────────────────────────────────────
+  await prisma.notification.createMany({
+    data: [
+      // Admin (5)
+      {
+        userId: admin.id,
+        type: "OVERTIME_WARNING",
+        title: "Overtime Alert",
+        message: "Carlos Garcia has 36+ hours scheduled this week.",
+        isRead: false,
+      },
+      {
+        userId: admin.id,
+        type: "SWAP_REQUESTED",
+        title: "New Swap Request",
+        message: "Mike Johnson has requested to drop their Downtown shift.",
+        isRead: false,
+      },
+      {
+        userId: admin.id,
+        type: "SCHEDULE_PUBLISHED",
+        title: "Schedule Published",
+        message: "Downtown schedule for this week has been published.",
+        isRead: true,
+      },
+      {
+        userId: admin.id,
+        type: "OVERTIME_WARNING",
+        title: "Overtime Alert",
+        message: "Ryan Taylor has 36+ hours scheduled this week.",
+        isRead: false,
+      },
+      {
+        userId: admin.id,
+        type: "GENERAL",
+        title: "Welcome to ShiftSync",
+        message: "Your ShiftSync dashboard is live. Start scheduling!",
+        isRead: true,
+      },
+      // Manager – James Wilson (3)
+      {
+        userId: manager1.id,
+        type: "SWAP_REQUESTED",
+        title: "New Swap Request",
+        message: "Mike Johnson has requested to drop their Downtown shift.",
+        isRead: false,
+      },
+      {
+        userId: manager1.id,
+        type: "OVERTIME_WARNING",
+        title: "Overtime Alert",
+        message: "Ryan Taylor has exceeded 35 hours this week.",
+        isRead: false,
+      },
+      {
+        userId: manager1.id,
+        type: "SCHEDULE_PUBLISHED",
+        title: "Schedule Published",
+        message: "Midtown schedule is now live for the week.",
+        isRead: true,
+      },
+      // Staff – Mike (3)
+      {
+        userId: staff.mike.id,
+        type: "SHIFT_ASSIGNED",
+        title: "Shift Assigned",
+        message: "You've been assigned to the Downtown bartender shift today.",
+        isRead: false,
+      },
+      {
+        userId: staff.mike.id,
+        type: "SCHEDULE_PUBLISHED",
+        title: "Schedule Published",
+        message: "This week's Downtown schedule has been published.",
+        isRead: true,
+      },
+      {
+        userId: staff.mike.id,
+        type: "SWAP_CANCELLED",
+        title: "Swap Cancelled",
+        message: "A previous swap request was cancelled.",
+        isRead: false,
+      },
+    ],
+  });
+
+  console.log("  ✓ Created notifications for admin, managers, and staff");
+
   // ── Summary ──────────────────────────────────────────────────────────────
   console.log("\n✅ Seed complete!\n");
   console.log("Login credentials (all accounts use the same password):");

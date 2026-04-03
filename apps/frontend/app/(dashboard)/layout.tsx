@@ -19,8 +19,6 @@ import {
   Settings,
   Bell,
   LogOut,
-  User,
-  ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -161,7 +159,7 @@ export default function DashboardLayout({
   return (
     <div className="flex min-h-screen">
       {/* Sidebar */}
-      <aside className="hidden w-64 flex-col border-r bg-white lg:flex">
+      <aside className="hidden w-64 flex-col border-r bg-white lg:flex h-screen sticky top-0">
         {/* Logo */}
         <div className="flex h-16 items-center gap-2 border-b px-6">
           <Clock className="h-6 w-6 text-primary" />
@@ -215,7 +213,7 @@ export default function DashboardLayout({
       {/* Main Content Area */}
       <div className="flex flex-1 flex-col">
         {/* Top Header */}
-        <header className="flex h-16 items-center justify-between border-b bg-white px-6">
+        <header className="flex h-16 items-center justify-between sticky top-0 border-b bg-white px-6">
           {/* Mobile menu button placeholder */}
           <div className="lg:hidden">
             <Clock className="h-6 w-6 text-primary" />
