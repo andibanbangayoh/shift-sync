@@ -1,0 +1,28 @@
+{
+  "name": "shift-sync",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -n backend,frontend -c blue,green \"pnpm --filter @shift-sync/backend dev\" \"pnpm --filter @shift-sync/frontend dev\"",
+    "dev:backend": "pnpm --filter @shift-sync/backend dev",
+    "dev:frontend": "pnpm --filter @shift-sync/frontend dev",
+    "build": "pnpm db:generate && pnpm --filter @shift-sync/backend build && pnpm --filter @shift-sync/frontend build",
+    "test": "pnpm --filter @shift-sync/backend test",
+    "test:unit": "pnpm --filter @shift-sync/backend test:unit",
+    "lint": "pnpm --filter @shift-sync/backend lint && pnpm --filter @shift-sync/frontend lint",
+    "db:generate": "pnpm --filter @shift-sync/backend db:generate",
+    "db:push": "pnpm --filter @shift-sync/backend db:push",
+    "db:seed": "pnpm --filter @shift-sync/backend db:seed",
+    "db:migrate": "pnpm --filter @shift-sync/backend db:migrate",
+    "db:reset": "pnpm --filter @shift-sync/backend db:reset",
+    "clean": "rm -rf node_modules apps/*/node_modules"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0",
+    "typescript": "^5.5.0"
+  },
+  "packageManager": "pnpm@9.10.0",
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

@@ -1,0 +1,324 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ─────────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  STAFF
+}
+
+enum ShiftStatus {
+  DRAFT
+  PUBLISHED
+  CANCELLED
+}
+
+enum AssignmentStatus {
+  ASSIGNED
+  CONFIRMED
+  CANCELLED
+}
+
+enum SwapRequestStatus {
+  PENDING
+  ACCEPTED
+  MANAGER_APPROVED
+  REJECTED
+  CANCELLED
+  EXPIRED
+}
+
+enum SwapRequestType {
+  SWAP
+  DROP
+}
+
+enum NotificationType {
+  SHIFT_ASSIGNED
+  SHIFT_CHANGED
+  SHIFT_CANCELLED
+  SCHEDULE_PUBLISHED
+  SWAP_REQUESTED
+  SWAP_ACCEPTED
+  SWAP_APPROVED
+  SWAP_REJECTED
+  SWAP_CANCELLED
+  SWAP_EXPIRED
+  DROP_AVAILABLE
+  DROP_CLAIMED
+  OVERTIME_WARNING
+  AVAILABILITY_CHANGED
+  GENERAL
+}
+
+// ─── Auth ──────────────────────────────────────────────────────────────────────
+
+model User {
+  id                 String    @id @default(uuid())
+  email              String    @unique
+  passwordHash       String
+  firstName          String
+  lastName           String
+  role               UserRole
+  phone              String?
+  desiredWeeklyHours Float?
+  isActive           Boolean   @default(true)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  deletedAt          DateTime?
+
+  // Relations
+  refreshTokens                RefreshToken[]
+  managedLocations             ManagerLocation[]
+  skills                       StaffSkill[]
+  certifications               StaffLocationCertification[]
+  availabilities               Availability[]
+  availabilityExceptions       AvailabilityException[]
+  shiftAssignments             ShiftAssignment[]
+  createdShifts                Shift[]           @relation("ShiftCreator")
+  assignedByMe                 ShiftAssignment[] @relation("AssignedBy")
+  swapRequestsMade             SwapRequest[]     @relation("SwapRequestor")
+  swapRequestsTargeted         SwapRequest[]     @relation("SwapTarget")
+  swapRequestsResolved         SwapRequest[]     @relation("SwapResolver")
+  notifications                Notification[]
+  auditLogs                    AuditLog[]
+
+  @@index([email])
+  @@index([role])
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  tokenHash String    @unique
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+  revokedAt DateTime?
+
+  @@index([userId])
+  @@index([tokenHash])
+}
+
+// ─── Locations & Certifications ────────────────────────────────────────────────
+
+model Location {
+  id        String   @id @default(uuid())
+  name      String
+  address   String
+  timezone  String   // IANA timezone e.g. "America/New_York"
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  managers       ManagerLocation[]
+  certifications StaffLocationCertification[]
+  shifts         Shift[]
+
+  @@index([timezone])
+}
+
+model ManagerLocation {
+  id         String   @id @default(uuid())
+  userId     String
+  locationId String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  assignedAt DateTime @default(now())
+
+  @@unique([userId, locationId])
+  @@index([userId])
+  @@index([locationId])
+}
+
+// ─── Skills ────────────────────────────────────────────────────────────────────
+
+model Skill {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  staffSkills StaffSkill[]
+  shifts      Shift[]
+}
+
+model StaffSkill {
+  id      String @id @default(uuid())
+  userId  String
+  skillId String
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skill   Skill  @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, skillId])
+  @@index([userId])
+  @@index([skillId])
+}
+
+model StaffLocationCertification {
+  id          String    @id @default(uuid())
+  userId      String
+  locationId  String
+  certifiedAt DateTime  @default(now())
+  revokedAt   DateTime?
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  location    Location  @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, locationId])
+  @@index([userId])
+  @@index([locationId])
+}
+
+// ─── Availability ──────────────────────────────────────────────────────────────
+
+model Availability {
+  id            String    @id @default(uuid())
+  userId        String
+  dayOfWeek     Int       // 0=Sunday, 1=Monday, ..., 6=Saturday
+  startTime     String    // "HH:mm" format e.g. "09:00"
+  endTime       String    // "HH:mm" format e.g. "17:00"
+  isRecurring   Boolean   @default(true)
+  effectiveFrom DateTime  @default(now())
+  effectiveTo   DateTime?
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, dayOfWeek])
+}
+
+model AvailabilityException {
+  id          String   @id @default(uuid())
+  userId      String
+  date        DateTime @db.Date
+  isAvailable Boolean  // false=blocked, true=extra availability
+  startTime   String?  // "HH:mm" format, null means whole day
+  endTime     String?  // "HH:mm" format
+  reason      String?
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, date])
+}
+
+// ─── Shifts ────────────────────────────────────────────────────────────────────
+
+model Shift {
+  id              String      @id @default(uuid())
+  locationId      String
+  date            DateTime    @db.Date
+  startTime       DateTime    // UTC datetime
+  endTime         DateTime    // UTC datetime
+  requiredSkillId String
+  headcount       Int         @default(1)
+  status          ShiftStatus @default(DRAFT)
+  publishedAt     DateTime?
+  editCutoffAt    DateTime?
+  version         Int         @default(1)
+  createdById     String
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  location      Location          @relation(fields: [locationId], references: [id])
+  requiredSkill Skill             @relation(fields: [requiredSkillId], references: [id])
+  createdBy     User              @relation("ShiftCreator", fields: [createdById], references: [id])
+  assignments   ShiftAssignment[]
+
+  @@index([locationId, date])
+  @@index([date, status])
+  @@index([createdById])
+}
+
+model ShiftAssignment {
+  id           String           @id @default(uuid())
+  shiftId      String
+  userId       String
+  status       AssignmentStatus @default(ASSIGNED)
+  assignedById String
+  assignedAt   DateTime         @default(now())
+  version      Int              @default(1)
+
+  shift      Shift  @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  user       User   @relation(fields: [userId], references: [id])
+  assignedBy User   @relation("AssignedBy", fields: [assignedById], references: [id])
+
+  swapRequestsAsSource SwapRequest[] @relation("SwapSource")
+  swapRequestsAsTarget SwapRequest[] @relation("SwapTargetAssignment")
+
+  @@unique([shiftId, userId])
+  @@index([userId])
+  @@index([shiftId])
+}
+
+// ─── Swap Requests ─────────────────────────────────────────────────────────────
+
+model SwapRequest {
+  id                    String            @id @default(uuid())
+  type                  SwapRequestType
+  requestorUserId       String
+  requestorAssignmentId String
+  targetAssignmentId    String?
+  targetUserId          String?
+  status                SwapRequestStatus @default(PENDING)
+  requestedAt           DateTime          @default(now())
+  respondedAt           DateTime?
+  resolvedAt            DateTime?
+  resolvedById          String?
+  cancellationReason    String?
+  expiresAt             DateTime?
+
+  requestor           User             @relation("SwapRequestor", fields: [requestorUserId], references: [id])
+  requestorAssignment ShiftAssignment  @relation("SwapSource", fields: [requestorAssignmentId], references: [id])
+  targetAssignment    ShiftAssignment? @relation("SwapTargetAssignment", fields: [targetAssignmentId], references: [id])
+  targetUser          User?            @relation("SwapTarget", fields: [targetUserId], references: [id])
+  resolvedBy          User?            @relation("SwapResolver", fields: [resolvedById], references: [id])
+
+  @@index([requestorUserId, status])
+  @@index([requestorAssignmentId, status])
+  @@index([targetUserId, status])
+  @@index([status])
+}
+
+// ─── Notifications ─────────────────────────────────────────────────────────────
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  type      NotificationType
+  title     String
+  message   String
+  data      Json?
+  isRead    Boolean          @default(false)
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+}
+
+// ─── Audit Log ─────────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  userId      String
+  action      String
+  entityType  String
+  entityId    String
+  beforeState Json?
+  afterState  Json?
+  reason      String?
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([createdAt])
+}
