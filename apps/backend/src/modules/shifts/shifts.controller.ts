@@ -57,7 +57,7 @@ export class ShiftsController {
     return this.shiftsService.getSkills();
   }
 
-  /** GET /api/shifts/eligible-staff?locationId=x&skillId=y */
+  /** GET /api/shifts/eligible-staff?locationId=x&skillId=y&shiftId=z */
   @Get("eligible-staff")
   @UseGuards(RolesGuard)
   @Roles("ADMIN" as any, "MANAGER" as any)
@@ -65,12 +65,14 @@ export class ShiftsController {
     @CurrentUser() user: { id: string; role: string },
     @Query("locationId") locationId: string,
     @Query("skillId") skillId?: string,
+    @Query("shiftId") shiftId?: string,
   ) {
     return this.shiftsService.getEligibleStaff(
       user.id,
       user.role as any,
       locationId,
       skillId,
+      shiftId,
     );
   }
 

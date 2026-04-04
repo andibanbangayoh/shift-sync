@@ -55,6 +55,9 @@ describe("Shifts E2E", () => {
     });
     if (staleUsers.length) {
       const ids = staleUsers.map((u) => u.id);
+      await prisma.auditLog.deleteMany({
+        where: { userId: { in: ids } },
+      });
       await prisma.refreshToken.deleteMany({
         where: { userId: { in: ids } },
       });
@@ -201,6 +204,9 @@ describe("Shifts E2E", () => {
     });
     const ids = users.map((u) => u.id);
 
+    await prisma.auditLog.deleteMany({
+      where: { userId: { in: ids } },
+    });
     await prisma.refreshToken.deleteMany({
       where: { userId: { in: ids } },
     });
@@ -724,9 +730,10 @@ describe("Shifts E2E", () => {
       .post(`/api/shifts/${extra.body.id}/assign`)
       .set("Authorization", `Bearer ${adminToken}`)
       .send({ userId: staffUserId })
-      .expect(400);
+      .expect(201);
 
-    expect(res.body.message).toContain("40-hour");
+    expect(res.body.overtimeWarning).toBeDefined();
+    expect(res.body.overtimeWarning).toContain("overtime");
   });
 
   it("POST /api/shifts/:id/assign → blocks 12h daily cap", async () => {

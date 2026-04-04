@@ -43,6 +43,22 @@ const DAYS = [
   "Sunday",
 ];
 
+/** Return YYYY-MM-DD in a given timezone (or UTC if not provided). */
+function dateStrInTz(d: Date, tz?: string): string {
+  if (!tz) return d.toISOString().split("T")[0];
+  // Format as YYYY-MM-DD in the location's timezone
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(d);
+  const y = parts.find((p) => p.type === "year")!.value;
+  const m = parts.find((p) => p.type === "month")!.value;
+  const day = parts.find((p) => p.type === "day")!.value;
+  return `${y}-${m}-${day}`;
+}
+
 /** Return YYYY-MM-DD in UTC for a Date. */
 function utcDateStr(d: Date): string {
   return d.toISOString().split("T")[0];
@@ -105,11 +121,14 @@ export function WeeklyCalendar() {
   const effectiveDefaultLocationId =
     role === "MANAGER" && locations.length === 1 ? locations[0].id : undefined;
 
-  // Group shifts by day index
+  // Group shifts by day index using the shift's location timezone
   const shiftsByDay = useMemo(() => {
     const map = new Map<number, Shift[]>();
     for (const shift of shifts) {
-      const shiftKey = utcDateStr(new Date(shift.startTime));
+      const shiftKey = dateStrInTz(
+        new Date(shift.startTime),
+        shift.location?.timezone,
+      );
       for (let dayIdx = 0; dayIdx < 7; dayIdx++) {
         const colKey = utcDateStr(addDays(weekStart, dayIdx));
         if (shiftKey === colKey) {

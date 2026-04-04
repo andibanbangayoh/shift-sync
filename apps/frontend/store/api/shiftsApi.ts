@@ -45,6 +45,8 @@ export interface EligibleStaff {
   lastName: string;
   email: string;
   skills: ShiftSkill[];
+  available?: boolean;
+  conflict?: string | null;
 }
 
 export interface CreateShiftPayload {
@@ -106,11 +108,15 @@ export const shiftsApi = baseApi.injectEndpoints({
 
     getEligibleStaff: builder.query<
       EligibleStaff[],
-      { locationId: string; skillId?: string }
+      { locationId: string; skillId?: string; shiftId?: string }
     >({
-      query: ({ locationId, skillId }) => ({
+      query: ({ locationId, skillId, shiftId }) => ({
         url: "/shifts/eligible-staff",
-        params: { locationId, ...(skillId && { skillId }) },
+        params: {
+          locationId,
+          ...(skillId && { skillId }),
+          ...(shiftId && { shiftId }),
+        },
       }),
     }),
 
@@ -139,12 +145,12 @@ export const shiftsApi = baseApi.injectEndpoints({
 
     assignStaff: builder.mutation<
       ShiftAssignment & { overtimeWarning?: string | null },
-      { shiftId: string; userId: string }
+      { shiftId: string; userId: string; overrideReason?: string }
     >({
-      query: ({ shiftId, userId }) => ({
+      query: ({ shiftId, userId, overrideReason }) => ({
         url: `/shifts/${shiftId}/assign`,
         method: "POST",
-        body: { userId },
+        body: { userId, ...(overrideReason && { overrideReason }) },
       }),
       invalidatesTags: ["Shifts", "Dashboard"],
     }),

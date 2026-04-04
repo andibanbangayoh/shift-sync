@@ -85,6 +85,8 @@ export function ShiftDetailDialog({
   const [error, setError] = useState("");
   const [warning, setWarning] = useState("");
   const [swapSuccess, setSwapSuccess] = useState("");
+  const [needsOverride, setNeedsOverride] = useState(false);
+  const [overrideReason, setOverrideReason] = useState("");
 
   const [updateShift, { isLoading: updating }] = useUpdateShiftMutation();
   const [assignStaff, { isLoading: assigning }] = useAssignStaffMutation();
@@ -96,6 +98,7 @@ export function ShiftDetailDialog({
     {
       locationId: shift?.locationId || "",
       skillId: shift?.requiredSkill.id,
+      shiftId: shift?.id,
     },
     { skip: !shift || !assigningStaff },
   );
@@ -200,15 +203,26 @@ export function ShiftDetailDialog({
       const result = await assignStaff({
         shiftId: shift.id,
         userId: selectedUserId,
+        ...(needsOverride && overrideReason ? { overrideReason } : {}),
       }).unwrap();
       if (result.overtimeWarning) {
         setWarning(result.overtimeWarning);
       }
       setSelectedUserId("");
       setAssigningStaff(false);
+      setNeedsOverride(false);
+      setOverrideReason("");
     } catch (err: any) {
       const msg = err?.data?.message || "Failed to assign staff";
-      setError(Array.isArray(msg) ? msg.join(", ") : msg);
+      const errStr = Array.isArray(msg) ? msg.join(", ") : msg;
+      // If 7th consecutive day error, prompt for override reason
+      if (errStr.includes("7th day")) {
+        setNeedsOverride(true);
+        setError(errStr);
+      } else {
+        setNeedsOverride(false);
+        setError(errStr);
+      }
     }
   }
 
@@ -225,10 +239,13 @@ export function ShiftDetailDialog({
     }
   }
 
-  // Filter out already-assigned staff
+  // Filter out already-assigned staff; backend already sorts available first
   const assignedIds = new Set(shift.assignments.map((a) => a.user.id));
   const availableStaff =
     eligibleStaff?.filter((s) => !assignedIds.has(s.id)) || [];
+
+  // Check if selected staff member is available
+  const selectedStaffInfo = availableStaff.find((s) => s.id === selectedUserId);
 
   return (
     <Dialog
@@ -358,8 +375,32 @@ export function ShiftDetailDialog({
                       </SelectTrigger>
                       <SelectContent>
                         {availableStaff.map((s) => (
-                          <SelectItem key={s.id} value={s.id}>
-                            {s.firstName} {s.lastName}
+                          <SelectItem
+                            key={s.id}
+                            value={s.id}
+                            disabled={s.available === false}
+                          >
+                            <span className="flex items-center gap-2">
+                              <span
+                                className={
+                                  s.available === false
+                                    ? "text-muted-foreground"
+                                    : ""
+                                }
+                              >
+                                {s.firstName} {s.lastName}
+                              </span>
+                              {s.available === false && s.conflict && (
+                                <span className="text-xs text-destructive">
+                                  ({s.conflict})
+                                </span>
+                              )}
+                              {s.available === true && (
+                                <span className="text-xs text-emerald-600">
+                                  ✓
+                                </span>
+                              )}
+                            </span>
                           </SelectItem>
                         ))}
                         {availableStaff.length === 0 && (
@@ -369,11 +410,34 @@ export function ShiftDetailDialog({
                         )}
                       </SelectContent>
                     </Select>
+                    {selectedStaffInfo?.available === false && (
+                      <p className="text-xs text-destructive">
+                        {selectedStaffInfo.conflict}
+                      </p>
+                    )}
+                    {needsOverride && (
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium text-amber-700">
+                          7th consecutive day — provide override reason:
+                        </label>
+                        <input
+                          type="text"
+                          className="flex h-8 w-full rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-amber-400"
+                          placeholder="e.g. Short-staffed, coverage needed"
+                          value={overrideReason}
+                          onChange={(e) => setOverrideReason(e.target.value)}
+                        />
+                      </div>
+                    )}
                     <div className="flex gap-2">
                       <Button
                         size="sm"
                         onClick={handleAssign}
-                        disabled={!selectedUserId || assigning}
+                        disabled={
+                          !selectedUserId ||
+                          assigning ||
+                          (needsOverride && !overrideReason.trim())
+                        }
                       >
                         {assigning && (
                           <Loader2 className="h-3 w-3 mr-1 animate-spin" />

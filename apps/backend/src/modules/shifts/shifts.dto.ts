@@ -72,6 +72,10 @@ export class UpdateShiftDto {
 export class AssignStaffDto {
   @IsString()
   userId: string;
+
+  @IsOptional()
+  @IsString()
+  overrideReason?: string;
 }
 
 export class MoveShiftDto {

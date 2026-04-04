@@ -6,6 +6,193 @@ import { UserRole } from "@prisma/client";
 export class DashboardService {
   constructor(private prisma: PrismaService) {}
 
+  /**
+   * Schedule Fairness Analytics — hours distribution, premium shifts,
+   * fairness scoring, over/under-scheduled staff.
+   */
+  async getAnalytics(
+    callerId: string,
+    callerRole: UserRole,
+    filters: { from?: string; to?: string; locationId?: string },
+  ) {
+    // Date range defaults to last 4 weeks
+    const to = filters.to ? new Date(filters.to) : new Date();
+    const from = filters.from
+      ? new Date(filters.from)
+      : new Date(to.getTime() - 28 * 86400000);
+
+    // Role-scoped location filter
+    let managedLocationIds: string[] | null = null;
+    if (callerRole === "MANAGER") {
+      const managed = await this.prisma.managerLocation.findMany({
+        where: { userId: callerId },
+        select: { locationId: true },
+      });
+      managedLocationIds = managed.map((m) => m.locationId);
+    }
+
+    const locationWhere: any = {};
+    if (filters.locationId) {
+      locationWhere.locationId = filters.locationId;
+    } else if (managedLocationIds) {
+      locationWhere.locationId = { in: managedLocationIds };
+    }
+
+    // Fetch all active assignments in range
+    const assignments = await this.prisma.shiftAssignment.findMany({
+      where: {
+        status: { in: ["ASSIGNED", "CONFIRMED"] },
+        shift: {
+          ...locationWhere,
+          status: { not: "CANCELLED" },
+          date: { gte: from, lte: to },
+        },
+      },
+      include: {
+        shift: {
+          select: {
+            id: true,
+            startTime: true,
+            endTime: true,
+            date: true,
+            locationId: true,
+            location: { select: { name: true } },
+            requiredSkill: { select: { name: true } },
+          },
+        },
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            desiredWeeklyHours: true,
+            role: true,
+          },
+        },
+      },
+    });
+
+    // ── Hours Distribution ────────────────────────────────────────────
+    const staffMap = new Map<
+      string,
+      {
+        user: (typeof assignments)[0]["user"];
+        totalHours: number;
+        premiumShifts: number;
+        regularShifts: number;
+        shiftCount: number;
+      }
+    >();
+
+    for (const a of assignments) {
+      const hours =
+        (a.shift.endTime.getTime() - a.shift.startTime.getTime()) / 3600000;
+
+      // Premium = Friday/Saturday evenings (shift starts at 5pm or later)
+      const dayOfWeek = a.shift.date.getUTCDay(); // 0=Sun .. 6=Sat
+      const startHour = a.shift.startTime.getUTCHours();
+      const isPremium = (dayOfWeek === 5 || dayOfWeek === 6) && startHour >= 17;
+
+      const existing = staffMap.get(a.user.id);
+      if (existing) {
+        existing.totalHours += hours;
+        existing.shiftCount += 1;
+        if (isPremium) existing.premiumShifts += 1;
+        else existing.regularShifts += 1;
+      } else {
+        staffMap.set(a.user.id, {
+          user: a.user,
+          totalHours: hours,
+          shiftCount: 1,
+          premiumShifts: isPremium ? 1 : 0,
+          regularShifts: isPremium ? 0 : 1,
+        });
+      }
+    }
+
+    // Calculate weeks in range
+    const weeksInRange = Math.max(
+      1,
+      Math.round((to.getTime() - from.getTime()) / (7 * 86400000)),
+    );
+
+    const staffAnalytics = Array.from(staffMap.values()).map((entry) => {
+      const desired = (entry.user.desiredWeeklyHours ?? 40) * weeksInRange;
+      const difference = Math.round((entry.totalHours - desired) * 10) / 10;
+      return {
+        id: entry.user.id,
+        firstName: entry.user.firstName,
+        lastName: entry.user.lastName,
+        email: entry.user.email,
+        role: entry.user.role,
+        desiredWeeklyHours: entry.user.desiredWeeklyHours ?? 40,
+        totalHours: Math.round(entry.totalHours * 10) / 10,
+        avgWeeklyHours: Math.round((entry.totalHours / weeksInRange) * 10) / 10,
+        desiredTotal: desired,
+        difference,
+        shiftCount: entry.shiftCount,
+        premiumShifts: entry.premiumShifts,
+        regularShifts: entry.regularShifts,
+      };
+    });
+
+    // Sort by absolute difference for fairness review
+    staffAnalytics.sort(
+      (a, b) => Math.abs(b.difference) - Math.abs(a.difference),
+    );
+
+    // ── Summary Stats ─────────────────────────────────────────────────
+    const totalStaff = staffAnalytics.length;
+    const avgHours =
+      totalStaff > 0
+        ? Math.round(
+            (staffAnalytics.reduce((s, a) => s + a.avgWeeklyHours, 0) /
+              totalStaff) *
+              10,
+          ) / 10
+        : 0;
+    const overScheduled = staffAnalytics.filter((s) => s.difference > 0);
+    const underScheduled = staffAnalytics.filter((s) => s.difference < 0);
+    const balanced = staffAnalytics.filter((s) => s.difference === 0);
+
+    // Premium fairness score (std deviation of premium shift counts)
+    const premiumCounts = staffAnalytics.map((s) => s.premiumShifts);
+    const avgPremium =
+      premiumCounts.length > 0
+        ? premiumCounts.reduce((a, b) => a + b, 0) / premiumCounts.length
+        : 0;
+    const premiumVariance =
+      premiumCounts.length > 0
+        ? premiumCounts.reduce((s, c) => s + Math.pow(c - avgPremium, 2), 0) /
+          premiumCounts.length
+        : 0;
+    const premiumStdDev = Math.sqrt(premiumVariance);
+    // Fairness: 100 = perfect, drops as std dev increases
+    const fairnessScore = Math.max(
+      0,
+      Math.round((100 - premiumStdDev * 20) * 10) / 10,
+    );
+
+    return {
+      period: {
+        from: from.toISOString(),
+        to: to.toISOString(),
+        weeks: weeksInRange,
+      },
+      summary: {
+        totalStaff,
+        avgWeeklyHours: avgHours,
+        overScheduledCount: overScheduled.length,
+        underScheduledCount: underScheduled.length,
+        balancedCount: balanced.length,
+        totalPremiumShifts: premiumCounts.reduce((a, b) => a + b, 0),
+        fairnessScore,
+      },
+      staff: staffAnalytics,
+    };
+  }
+
   async getStats(userId: string, role: UserRole) {
     const now = new Date();
     const startOfDay = new Date(now);
@@ -20,6 +207,7 @@ export class DashboardService {
     endOfWeek.setDate(startOfWeek.getDate() + 7);
 
     // Get location IDs the user manages (for MANAGER role)
+    // or is certified at (for STAFF role)
     let managedLocationIds: string[] = [];
     if (role === "MANAGER") {
       const managed = await this.prisma.managerLocation.findMany({
@@ -27,10 +215,16 @@ export class DashboardService {
         select: { locationId: true },
       });
       managedLocationIds = managed.map((m) => m.locationId);
+    } else if (role === "STAFF") {
+      const certs = await this.prisma.staffLocationCertification.findMany({
+        where: { userId, revokedAt: null },
+        select: { locationId: true },
+      });
+      managedLocationIds = certs.map((c) => c.locationId);
     }
 
     const locationFilter =
-      role === "MANAGER" ? { locationId: { in: managedLocationIds } } : {};
+      role === "ADMIN" ? {} : { locationId: { in: managedLocationIds } };
 
     // On Duty Now — shifts happening right now with assigned staff
     const onDutyShifts = await this.prisma.shift.findMany({
@@ -159,14 +353,47 @@ export class DashboardService {
       }
     }
 
+    // Calculate available hours from Availability model for each user
+    const userIds = Array.from(hoursByUser.keys());
+    const availabilities = await this.prisma.availability.findMany({
+      where: {
+        userId: { in: userIds },
+        effectiveFrom: { lte: endOfWeek },
+        OR: [{ effectiveTo: null }, { effectiveTo: { gte: startOfWeek } }],
+      },
+    });
+
+    const availableHoursByUser = new Map<string, number>();
+    for (const slot of availabilities) {
+      const [startH, startM] = slot.startTime.split(":").map(Number);
+      const [endH, endM] = slot.endTime.split(":").map(Number);
+      const slotHours = endH + endM / 60 - (startH + startM / 60);
+      const current = availableHoursByUser.get(slot.userId) || 0;
+      availableHoursByUser.set(slot.userId, current + slotHours);
+    }
+
+    // Overtime alerts per REQUIREMENTS: warning at 35+ hours (approaching 40h)
+    // Also flag when assigned hours exceed the staff member's total available hours
     const overtimeAlerts = Array.from(hoursByUser.values())
-      .filter((entry) => entry.hours >= 35)
+      .filter((entry) => {
+        const available = availableHoursByUser.get(entry.user.id);
+        return (
+          entry.hours >= 35 ||
+          (available !== undefined && entry.hours > available)
+        );
+      })
       .map((entry) => ({
         userId: entry.user.id,
         firstName: entry.user.firstName,
         lastName: entry.user.lastName,
         hoursAssigned: Math.round(entry.hours * 10) / 10,
         desiredHours: entry.user.desiredWeeklyHours || 40,
+        availableHours:
+          availableHoursByUser.get(entry.user.id) !== undefined
+            ? Math.round(
+                (availableHoursByUser.get(entry.user.id) as number) * 10,
+              ) / 10
+            : null,
       }))
       .sort((a, b) => b.hoursAssigned - a.hoursAssigned);
 
