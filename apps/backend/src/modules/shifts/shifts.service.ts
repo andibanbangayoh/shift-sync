@@ -65,16 +65,30 @@ export class ShiftsService {
       locationFilter.locationId = { in: accessibleIds };
     }
 
-    // Staff only see published shifts; admins/managers see all non-cancelled
+    // Staff only see published shifts they're assigned to; admins/managers see all non-cancelled
     const statusFilter =
       role === "STAFF"
         ? { status: "PUBLISHED" as const }
         : { status: { not: "CANCELLED" as const } };
 
+    // STAFF: only shifts where they have an active assignment
+    const assignmentFilter =
+      role === "STAFF"
+        ? {
+            assignments: {
+              some: {
+                userId,
+                status: { in: ["ASSIGNED" as const, "CONFIRMED" as const] },
+              },
+            },
+          }
+        : {};
+
     const shifts = await this.prisma.shift.findMany({
       where: {
         ...locationFilter,
         ...statusFilter,
+        ...assignmentFilter,
         date: {
           gte: new Date(weekStart),
           lte: new Date(weekEnd),

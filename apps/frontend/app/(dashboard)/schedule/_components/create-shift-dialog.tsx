@@ -127,13 +127,13 @@ export function CreateShiftDialog({
       return;
     }
 
-    const startISO = new Date(`${date}T${startTime}:00`).toISOString();
-    const endISO = new Date(`${date}T${endTime}:00`).toISOString();
+    const startISO = `${date}T${startTime}:00.000Z`;
+    const endISO = `${date}T${endTime}:00.000Z`;
 
     try {
       const result = await createShift({
         locationId,
-        date: new Date(`${date}T00:00:00`).toISOString(),
+        date: `${date}T00:00:00.000Z`,
         startTime: startISO,
         endTime: endISO,
         requiredSkillId: skillId,

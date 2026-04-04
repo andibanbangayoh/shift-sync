@@ -43,12 +43,6 @@ const navItems: NavItem[] = [
     roles: ["ADMIN", "MANAGER", "STAFF"],
   },
   {
-    label: "Shifts",
-    href: "/shifts",
-    icon: <ClipboardList className="h-4 w-4" />,
-    roles: ["ADMIN", "MANAGER"],
-  },
-  {
     label: "Swaps",
     href: "/swaps",
     icon: <ArrowLeftRight className="h-4 w-4" />,

@@ -43,28 +43,32 @@ const DAYS = [
   "Sunday",
 ];
 
+/** Return YYYY-MM-DD in UTC for a Date. */
+function utcDateStr(d: Date): string {
+  return d.toISOString().split("T")[0];
+}
+
 function getWeekStart(date: Date): Date {
   const d = new Date(date);
-  const day = d.getDay(); // 0=Sun
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Monday
-  d.setDate(diff);
-  d.setHours(0, 0, 0, 0);
+  const day = d.getUTCDay(); // 0=Sun
+  const diff = d.getUTCDate() - day + (day === 0 ? -6 : 1); // Monday
+  d.setUTCDate(diff);
+  d.setUTCHours(0, 0, 0, 0);
   return d;
 }
 
 function addDays(date: Date, n: number): Date {
   const d = new Date(date);
-  d.setDate(d.getDate() + n);
+  d.setUTCDate(d.getUTCDate() + n);
   return d;
 }
 
 function toDateStr(d: Date): string {
-  return d.toISOString().split("T")[0]; // YYYY-MM-DD
+  return utcDateStr(d);
 }
 
 function isToday(d: Date): boolean {
-  const today = new Date();
-  return d.toDateString() === today.toDateString();
+  return utcDateStr(d) === utcDateStr(new Date());
 }
 
 // ─── Component ─────────────────────────────────────────────────────────────────
@@ -105,10 +109,10 @@ export function WeeklyCalendar() {
   const shiftsByDay = useMemo(() => {
     const map = new Map<number, Shift[]>();
     for (const shift of shifts) {
-      const shiftDate = new Date(shift.startTime);
+      const shiftKey = utcDateStr(new Date(shift.startTime));
       for (let dayIdx = 0; dayIdx < 7; dayIdx++) {
-        const colDate = addDays(weekStart, dayIdx);
-        if (shiftDate.toDateString() === colDate.toDateString()) {
+        const colKey = utcDateStr(addDays(weekStart, dayIdx));
+        if (shiftKey === colKey) {
           const arr = map.get(dayIdx) || [];
           arr.push(shift);
           map.set(dayIdx, arr);
@@ -174,10 +178,10 @@ export function WeeklyCalendar() {
 
     const dropDate = addDays(weekStart, dayIdx);
     const newStart = new Date(dropDate);
-    newStart.setHours(
-      oldStart.getHours(),
-      oldStart.getMinutes(),
-      oldStart.getSeconds(),
+    newStart.setUTCHours(
+      oldStart.getUTCHours(),
+      oldStart.getUTCMinutes(),
+      oldStart.getUTCSeconds(),
       0,
     );
     const newEnd = new Date(newStart.getTime() + duration);
@@ -202,10 +206,12 @@ export function WeeklyCalendar() {
   const weekLabel = `${weekStart.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
+    timeZone: "UTC",
   })} – ${weekEnd.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",
+    timeZone: "UTC",
   })}`;
 
   return (
@@ -299,7 +305,7 @@ export function WeeklyCalendar() {
                     <p
                       className={`text-lg font-semibold ${today ? "text-primary" : ""}`}
                     >
-                      {date.getDate()}
+                      {date.getUTCDate()}
                     </p>
                     {today && (
                       <Badge

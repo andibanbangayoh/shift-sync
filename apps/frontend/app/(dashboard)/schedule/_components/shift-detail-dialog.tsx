@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useAppSelector } from "@/store/store";
 import {
   Dialog,
   DialogContent,
@@ -29,6 +30,9 @@ import {
   AlertTriangle,
   Loader2,
   X,
+  ArrowLeftRight,
+  ArrowDown,
+  CheckCircle2,
 } from "lucide-react";
 import type { Shift } from "@/store/api/shiftsApi";
 import {
@@ -38,6 +42,16 @@ import {
   useDeleteShiftMutation,
   useGetEligibleStaffQuery,
 } from "@/store/api/shiftsApi";
+import {
+  useCreateSwapMutation,
+  useGetCoworkersQuery,
+} from "@/store/api/swapsApi";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface ShiftDetailDialogProps {
   shift: Shift | null;
@@ -64,15 +78,19 @@ export function ShiftDetailDialog({
   onOpenChange,
   canEdit,
 }: ShiftDetailDialogProps) {
+  const { user } = useAppSelector((s) => s.auth);
   const [assigningStaff, setAssigningStaff] = useState(false);
+  const [showSwapPicker, setShowSwapPicker] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState("");
   const [error, setError] = useState("");
   const [warning, setWarning] = useState("");
+  const [swapSuccess, setSwapSuccess] = useState("");
 
   const [updateShift, { isLoading: updating }] = useUpdateShiftMutation();
   const [assignStaff, { isLoading: assigning }] = useAssignStaffMutation();
   const [unassignStaff] = useUnassignStaffMutation();
   const [deleteShift, { isLoading: deleting }] = useDeleteShiftMutation();
+  const [createSwap, { isLoading: creatingSwap }] = useCreateSwapMutation();
 
   const { data: eligibleStaff } = useGetEligibleStaffQuery(
     {
@@ -82,9 +100,60 @@ export function ShiftDetailDialog({
     { skip: !shift || !assigningStaff },
   );
 
+  const { data: coworkers = [] } = useGetCoworkersQuery(
+    {
+      locationId: shift?.locationId || "",
+      shiftStart: shift?.startTime || "",
+      shiftEnd: shift?.endTime || "",
+    },
+    { skip: !shift || !showSwapPicker },
+  );
+
   if (!shift) return null;
 
   const isFull = shift.assignments.length >= shift.headcount;
+
+  // Staff swap/drop: find the current user's assignment in this shift
+  const myAssignment =
+    user && !canEdit
+      ? shift.assignments.find((a) => a.user.id === user.id)
+      : null;
+
+  async function handleDropRequest() {
+    if (!myAssignment) return;
+    setError("");
+    setSwapSuccess("");
+    try {
+      await createSwap({
+        requestorAssignmentId: myAssignment.id,
+        type: "DROP",
+      }).unwrap();
+      setSwapSuccess("Drop request submitted! A manager will review it.");
+    } catch (err: any) {
+      const msg = err?.data?.message || "Failed to submit drop request";
+      setError(Array.isArray(msg) ? msg.join(", ") : msg);
+    }
+  }
+
+  async function handleSwapRequest(targetUserId: string) {
+    if (!myAssignment) return;
+    setError("");
+    setSwapSuccess("");
+    try {
+      await createSwap({
+        requestorAssignmentId: myAssignment.id,
+        type: "SWAP",
+        targetUserId,
+      }).unwrap();
+      setSwapSuccess(
+        "Swap request submitted! The target staff member will be notified.",
+      );
+      setShowSwapPicker(false);
+    } catch (err: any) {
+      const msg = err?.data?.message || "Failed to submit swap request";
+      setError(Array.isArray(msg) ? msg.join(", ") : msg);
+    }
+  }
 
   async function handlePublish() {
     if (!shift) return;
@@ -162,7 +231,17 @@ export function ShiftDetailDialog({
     eligibleStaff?.filter((s) => !assignedIds.has(s.id)) || [];
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) {
+          setSwapSuccess("");
+          setError("");
+          setShowSwapPicker(false);
+        }
+        onOpenChange(v);
+      }}
+    >
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -336,6 +415,136 @@ export function ShiftDetailDialog({
                 <p className="text-sm text-amber-700">{warning}</p>
               </div>
             </Card>
+          )}
+
+          {/* Swap success */}
+          {swapSuccess && (
+            <Card className="p-3 border-green-400 bg-green-50">
+              <div className="flex items-start gap-2">
+                <CheckCircle2 className="h-4 w-4 text-green-600 mt-0.5" />
+                <p className="text-sm text-green-700">{swapSuccess}</p>
+              </div>
+            </Card>
+          )}
+
+          {/* Staff: Request Swap / Drop */}
+          {myAssignment && !swapSuccess && (
+            <>
+              <Separator />
+              <div className="space-y-3">
+                <p className="text-sm font-medium">Shift Actions</p>
+
+                {!showSwapPicker ? (
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setShowSwapPicker(true)}
+                      disabled={creatingSwap}
+                      className="flex-1"
+                    >
+                      <ArrowLeftRight className="h-4 w-4 mr-2" />
+                      Request Swap
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleDropRequest}
+                      disabled={creatingSwap}
+                      className="flex-1"
+                    >
+                      {creatingSwap ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <ArrowDown className="h-4 w-4 mr-2" />
+                      )}
+                      Request Drop
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-2 rounded-md border p-3 bg-muted/30">
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      Select a coworker to swap with
+                    </p>
+                    {coworkers.length === 0 ? (
+                      <p className="text-sm text-muted-foreground py-2">
+                        No coworkers found at this location.
+                      </p>
+                    ) : (
+                      <TooltipProvider>
+                        <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                          {coworkers.map((cw) => (
+                            <Tooltip key={cw.id}>
+                              <TooltipTrigger asChild>
+                                <button
+                                  type="button"
+                                  disabled={!cw.available || creatingSwap}
+                                  onClick={() => handleSwapRequest(cw.id)}
+                                  className={`flex w-full items-center gap-2 rounded-md border p-2 text-left transition-colors ${
+                                    cw.available
+                                      ? "hover:bg-primary/5 hover:border-primary/30 cursor-pointer"
+                                      : "opacity-50 cursor-not-allowed bg-muted/20"
+                                  }`}
+                                >
+                                  <div
+                                    className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-medium ${
+                                      cw.available
+                                        ? "bg-primary/10 text-primary"
+                                        : "bg-muted text-muted-foreground"
+                                    }`}
+                                  >
+                                    {cw.firstName[0]}
+                                    {cw.lastName[0]}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-medium truncate">
+                                      {cw.firstName} {cw.lastName}
+                                    </p>
+                                    {!cw.available && (
+                                      <p className="text-[11px] text-amber-600">
+                                        {cw.conflictReason}
+                                      </p>
+                                    )}
+                                  </div>
+                                  {cw.available ? (
+                                    <Badge
+                                      variant="outline"
+                                      className="text-green-700 border-green-300 text-[10px] shrink-0"
+                                    >
+                                      Available
+                                    </Badge>
+                                  ) : (
+                                    <Badge
+                                      variant="outline"
+                                      className="text-amber-600 border-amber-300 text-[10px] shrink-0"
+                                    >
+                                      Busy
+                                    </Badge>
+                                  )}
+                                </button>
+                              </TooltipTrigger>
+                              {!cw.available && (
+                                <TooltipContent>
+                                  <p>{cw.conflictReason}</p>
+                                </TooltipContent>
+                              )}
+                            </Tooltip>
+                          ))}
+                        </div>
+                      </TooltipProvider>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowSwapPicker(false)}
+                      className="w-full"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </>
           )}
 
           {/* Actions */}

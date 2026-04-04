@@ -5,6 +5,7 @@ import { AuthModule } from "./modules/auth/auth.module";
 import { UsersModule } from "./modules/users/users.module";
 import { DashboardModule } from "./modules/dashboard/dashboard.module";
 import { ShiftsModule } from "./modules/shifts/shifts.module";
+import { SwapsModule } from "./modules/swaps/swaps.module";
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { ShiftsModule } from "./modules/shifts/shifts.module";
     UsersModule,
     DashboardModule,
     ShiftsModule,
+    SwapsModule,
   ],
 })
 export class AppModule {}
