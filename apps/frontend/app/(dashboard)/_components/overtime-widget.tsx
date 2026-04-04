@@ -19,22 +19,31 @@ export function OvertimeWidget({ alerts }: OvertimeWidgetProps) {
       <CardContent>
         {alerts.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
-            All staff within desired hours
+            No overtime alerts this week
           </p>
         ) : (
           <div className="space-y-3">
             {alerts.map((alert) => {
-              const over = (alert.hoursAssigned - alert.desiredHours).toFixed(
-                1,
-              );
+              const isOvertime = alert.hoursAssigned >= 40;
+              const exceedsAvailable =
+                alert.availableHours !== null &&
+                alert.hoursAssigned > alert.availableHours;
               const pct = Math.min(
                 100,
-                Math.round((alert.hoursAssigned / alert.desiredHours) * 100),
+                Math.round((alert.hoursAssigned / 40) * 100),
               );
+              const isSevere = isOvertime || exceedsAvailable;
+              const borderColor = isSevere
+                ? "border-red-300"
+                : "border-amber-200";
+              const bgColor = isSevere ? "bg-red-50" : "bg-amber-50";
+              const barTrackColor = isSevere ? "bg-red-200" : "bg-amber-200";
+              const barFillColor = isSevere ? "bg-red-500" : "bg-amber-500";
+
               return (
                 <div
                   key={alert.userId}
-                  className="rounded-lg border border-amber-200 bg-amber-50 p-3"
+                  className={`rounded-lg border ${borderColor} ${bgColor} p-3`}
                 >
                   <div className="flex items-start justify-between">
                     <div className="space-y-1">
@@ -42,18 +51,34 @@ export function OvertimeWidget({ alerts }: OvertimeWidgetProps) {
                         {alert.firstName} {alert.lastName}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {alert.hoursAssigned}h assigned / {alert.desiredHours}h
-                        desired
+                        {alert.hoursAssigned}h assigned / 40h limit
+                        {alert.availableHours !== null &&
+                          ` / ${alert.availableHours}h available`}
                       </p>
-                      <div className="mt-1.5 h-1.5 w-32 rounded-full bg-amber-200">
+                      {exceedsAvailable && (
+                        <p className="text-xs font-medium text-red-600">
+                          Exceeds available hours by{" "}
+                          {(
+                            alert.hoursAssigned - alert.availableHours!
+                          ).toFixed(1)}
+                          h
+                        </p>
+                      )}
+                      <div
+                        className={`mt-1.5 h-1.5 w-32 rounded-full ${barTrackColor}`}
+                      >
                         <div
-                          className="h-1.5 rounded-full bg-amber-500"
+                          className={`h-1.5 rounded-full ${barFillColor}`}
                           style={{ width: `${pct}%` }}
                         />
                       </div>
                     </div>
-                    <span className="rounded-full border border-amber-300 px-2 py-0.5 text-xs font-medium text-amber-700">
-                      +{over}h
+                    <span
+                      className={`rounded-full border ${isSevere ? "border-red-300" : "border-amber-300"} px-2 py-0.5 text-xs font-medium ${isSevere ? "text-red-700" : "text-amber-700"}`}
+                    >
+                      {isOvertime
+                        ? `+${(alert.hoursAssigned - 40).toFixed(1)}h OT`
+                        : "Approaching 40h"}
                     </span>
                   </div>
                 </div>

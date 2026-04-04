@@ -193,6 +193,9 @@ describe("Users (Staff Management) E2E", () => {
     await prisma.availability.deleteMany({
       where: { userId: { in: ids } },
     });
+    await prisma.auditLog.deleteMany({
+      where: { userId: { in: ids } },
+    });
     await prisma.notification.deleteMany({
       where: { userId: { in: ids } },
     });
@@ -477,5 +480,51 @@ describe("Users (Staff Management) E2E", () => {
     expect(res.body.certifications).toBeDefined();
     expect(res.body.availabilities).toBeDefined();
     expect(res.body.passwordHash).toBeUndefined();
+  });
+
+  // ════════════════════════════════════════════════════════════════════════
+  // MANAGER SCOPING — managers can only access staff at their locations
+  // ════════════════════════════════════════════════════════════════════════
+
+  it("GET /api/users/:id → manager can view staff at their location", async () => {
+    await request(app.getHttpServer())
+      .get(`/api/users/${staffId}`)
+      .set("Authorization", `Bearer ${managerToken}`)
+      .expect(200);
+  });
+
+  it("GET /api/users/:id → manager cannot view users outside their locations", async () => {
+    // newStaffId was created via API but has no certification at manager's location
+    await request(app.getHttpServer())
+      .get(`/api/users/${newStaffId}`)
+      .set("Authorization", `Bearer ${managerToken}`)
+      .expect(403);
+  });
+
+  it("PATCH /api/users/:id → manager can update staff at their location", async () => {
+    await request(app.getHttpServer())
+      .patch(`/api/users/${staffId}`)
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ phone: "555-9999" })
+      .expect(200);
+  });
+
+  it("PATCH /api/users/:id → manager cannot update staff outside their locations", async () => {
+    await request(app.getHttpServer())
+      .patch(`/api/users/${newStaffId}`)
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ phone: "555-0000" })
+      .expect(403);
+  });
+
+  it("GET /api/users?role=ADMIN → manager cannot filter to see admins", async () => {
+    const res = await request(app.getHttpServer())
+      .get("/api/users")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .query({ role: "ADMIN" })
+      .expect(200);
+
+    const admins = res.body.filter((u: any) => u.role === "ADMIN");
+    expect(admins.length).toBe(0);
   });
 });

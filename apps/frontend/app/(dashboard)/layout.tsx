@@ -21,6 +21,7 @@ import {
   LogOut,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import Link from "next/link";
 
 interface NavItem {
   label: string;
@@ -64,6 +65,12 @@ const navItems: NavItem[] = [
     label: "Analytics",
     href: "/analytics",
     icon: <BarChart3 className="h-4 w-4" />,
+    roles: ["ADMIN", "MANAGER"],
+  },
+  {
+    label: "Audit Trail",
+    href: "/audit",
+    icon: <ClipboardList className="h-4 w-4" />,
     roles: ["ADMIN", "MANAGER"],
   },
   {
@@ -165,7 +172,7 @@ export default function DashboardLayout({
           {filteredNavItems.map((item) => {
             const isActive = pathname === item.href;
             return (
-              <a
+              <Link
                 key={item.href}
                 href={item.href}
                 className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
@@ -176,7 +183,7 @@ export default function DashboardLayout({
               >
                 {item.icon}
                 {item.label}
-              </a>
+              </Link>
             );
           })}
         </nav>

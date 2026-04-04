@@ -58,6 +58,9 @@ describe("Dashboard E2E", () => {
       await prisma.shiftAssignment.deleteMany({
         where: { userId: { in: staleIds } },
       });
+      await prisma.staffLocationCertification.deleteMany({
+        where: { userId: { in: staleIds } },
+      });
     }
     const staleLocation = await prisma.location.findFirst({
       where: { name: TEST_LOCATION_NAME },
@@ -152,6 +155,11 @@ describe("Dashboard E2E", () => {
       },
     });
 
+    // Certify staff at the location so they can see location-scoped data
+    await prisma.staffLocationCertification.create({
+      data: { userId: staffUser.id, locationId: testLocation.id },
+    });
+
     // Notification for the staff user
     await prisma.notification.create({
       data: {
@@ -195,6 +203,9 @@ describe("Dashboard E2E", () => {
       where: { requestorUserId: { in: userIds } },
     });
     await prisma.shiftAssignment.deleteMany({
+      where: { userId: { in: userIds } },
+    });
+    await prisma.staffLocationCertification.deleteMany({
       where: { userId: { in: userIds } },
     });
     await prisma.notification.deleteMany({

@@ -23,6 +23,33 @@ export class UsersService {
     return locs.map((l) => l.locationId);
   }
 
+  /**
+   * Ensure a MANAGER is allowed to access the target user.
+   * Managers can only access staff certified at their managed locations.
+   */
+  private async assertUserAccess(
+    callerId: string,
+    callerRole: UserRole,
+    targetUserId: string,
+  ) {
+    if (callerRole === "ADMIN") return;
+
+    // Managers can access themselves
+    if (targetUserId === callerId) return;
+
+    const locIds = await this.getManagedLocationIds(callerId);
+    const cert = await this.prisma.staffLocationCertification.findFirst({
+      where: {
+        userId: targetUserId,
+        locationId: { in: locIds },
+        revokedAt: null,
+      },
+    });
+    if (!cert) {
+      throw new ForbiddenException("You do not have access to this user");
+    }
+  }
+
   // ── List ─────────────────────────────────────────────────────────────
 
   async findAll(
@@ -49,7 +76,16 @@ export class UsersService {
     }
 
     if (filters.role) {
-      where.role = filters.role;
+      if (callerRole === "MANAGER") {
+        // Only allow filtering to roles the manager can see
+        const allowed: UserRole[] = ["MANAGER", "STAFF"];
+        if (allowed.includes(filters.role)) {
+          where.role = filters.role;
+        }
+        // If they requested ADMIN, keep the existing restriction (no results)
+      } else {
+        where.role = filters.role;
+      }
     }
 
     if (filters.search) {
@@ -96,7 +132,12 @@ export class UsersService {
 
   // ── Detail ───────────────────────────────────────────────────────────
 
-  async findOne(id: string) {
+  async findOne(id: string, callerId?: string, callerRole?: UserRole) {
+    // Scope check: managers can only view users at their locations
+    if (callerId && callerRole) {
+      await this.assertUserAccess(callerId, callerRole, id);
+    }
+
     const user = await this.prisma.user.findUnique({
       where: { id },
       include: {
@@ -174,6 +215,8 @@ export class UsersService {
 
   async updateStaff(
     id: string,
+    callerId: string,
+    callerRole: UserRole,
     dto: {
       firstName?: string;
       lastName?: string;
@@ -182,6 +225,8 @@ export class UsersService {
       isActive?: boolean;
     },
   ) {
+    await this.assertUserAccess(callerId, callerRole, id);
+
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user || user.deletedAt) {
       throw new NotFoundException("User not found");
@@ -198,7 +243,14 @@ export class UsersService {
 
   // ── Skills ───────────────────────────────────────────────────────────
 
-  async addSkill(userId: string, skillId: string) {
+  async addSkill(
+    userId: string,
+    skillId: string,
+    callerId: string,
+    callerRole: UserRole,
+  ) {
+    await this.assertUserAccess(callerId, callerRole, userId);
+
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException("User not found");
 
@@ -215,7 +267,14 @@ export class UsersService {
     });
   }
 
-  async removeSkill(userId: string, skillId: string) {
+  async removeSkill(
+    userId: string,
+    skillId: string,
+    callerId: string,
+    callerRole: UserRole,
+  ) {
+    await this.assertUserAccess(callerId, callerRole, userId);
+
     const record = await this.prisma.staffSkill.findUnique({
       where: { userId_skillId: { userId, skillId } },
     });
@@ -229,7 +288,22 @@ export class UsersService {
 
   // ── Location Certifications ──────────────────────────────────────────
 
-  async addCertification(userId: string, locationId: string) {
+  async addCertification(
+    userId: string,
+    locationId: string,
+    callerId: string,
+    callerRole: UserRole,
+  ) {
+    // For certifications, managers can only certify for their own locations
+    if (callerRole === "MANAGER") {
+      const locIds = await this.getManagedLocationIds(callerId);
+      if (!locIds.includes(locationId)) {
+        throw new ForbiddenException(
+          "You can only certify staff at your managed locations",
+        );
+      }
+    }
+
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException("User not found");
 
@@ -247,7 +321,21 @@ export class UsersService {
     });
   }
 
-  async removeCertification(userId: string, locationId: string) {
+  async removeCertification(
+    userId: string,
+    locationId: string,
+    callerId: string,
+    callerRole: UserRole,
+  ) {
+    if (callerRole === "MANAGER") {
+      const locIds = await this.getManagedLocationIds(callerId);
+      if (!locIds.includes(locationId)) {
+        throw new ForbiddenException(
+          "You can only manage certifications at your managed locations",
+        );
+      }
+    }
+
     const record = await this.prisma.staffLocationCertification.findUnique({
       where: { userId_locationId: { userId, locationId } },
     });
@@ -265,7 +353,11 @@ export class UsersService {
   async addAvailability(
     userId: string,
     dto: { dayOfWeek: number; startTime: string; endTime: string },
+    callerId: string,
+    callerRole: UserRole,
   ) {
+    await this.assertUserAccess(callerId, callerRole, userId);
+
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException("User not found");
 
@@ -286,7 +378,14 @@ export class UsersService {
     });
   }
 
-  async removeAvailability(availabilityId: string) {
+  async removeAvailability(
+    userId: string,
+    availabilityId: string,
+    callerId: string,
+    callerRole: UserRole,
+  ) {
+    await this.assertUserAccess(callerId, callerRole, userId);
+
     const record = await this.prisma.availability.findUnique({
       where: { id: availabilityId },
     });

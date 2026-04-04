@@ -15,6 +15,7 @@ export interface DashboardOvertimeAlert {
   lastName: string;
   hoursAssigned: number;
   desiredHours: number;
+  availableHours: number | null;
 }
 
 export interface DashboardUpcomingShift {

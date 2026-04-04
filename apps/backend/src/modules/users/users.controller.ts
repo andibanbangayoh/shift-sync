@@ -43,8 +43,11 @@ export class UsersController {
 
   @Get(":id")
   @Roles(UserRole.ADMIN, UserRole.MANAGER)
-  async findOne(@Param("id") id: string) {
-    return this.usersService.findOne(id);
+  async findOne(
+    @CurrentUser() user: { id: string; role: string },
+    @Param("id") id: string,
+  ) {
+    return this.usersService.findOne(id, user.id, user.role as UserRole);
   }
 
   @Post()
@@ -58,25 +61,49 @@ export class UsersController {
 
   @Patch(":id")
   @Roles(UserRole.ADMIN, UserRole.MANAGER)
-  async updateStaff(@Param("id") id: string, @Body() dto: UpdateStaffDto) {
-    return this.usersService.updateStaff(id, dto);
+  async updateStaff(
+    @CurrentUser() user: { id: string; role: string },
+    @Param("id") id: string,
+    @Body() dto: UpdateStaffDto,
+  ) {
+    return this.usersService.updateStaff(
+      id,
+      user.id,
+      user.role as UserRole,
+      dto,
+    );
   }
 
   // ── Skills ───────────────────────────────────────────────────────────
 
   @Post(":id/skills")
   @Roles(UserRole.ADMIN, UserRole.MANAGER)
-  async addSkill(@Param("id") id: string, @Body() dto: AddSkillDto) {
-    return this.usersService.addSkill(id, dto.skillId);
+  async addSkill(
+    @CurrentUser() user: { id: string; role: string },
+    @Param("id") id: string,
+    @Body() dto: AddSkillDto,
+  ) {
+    return this.usersService.addSkill(
+      id,
+      dto.skillId,
+      user.id,
+      user.role as UserRole,
+    );
   }
 
   @Delete(":id/skills/:skillId")
   @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async removeSkill(
+    @CurrentUser() user: { id: string; role: string },
     @Param("id") id: string,
     @Param("skillId") skillId: string,
   ) {
-    return this.usersService.removeSkill(id, skillId);
+    return this.usersService.removeSkill(
+      id,
+      skillId,
+      user.id,
+      user.role as UserRole,
+    );
   }
 
   // ── Certifications (Locations) ───────────────────────────────────────
@@ -84,19 +111,31 @@ export class UsersController {
   @Post(":id/certifications")
   @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async addCertification(
+    @CurrentUser() user: { id: string; role: string },
     @Param("id") id: string,
     @Body() dto: AddCertificationDto,
   ) {
-    return this.usersService.addCertification(id, dto.locationId);
+    return this.usersService.addCertification(
+      id,
+      dto.locationId,
+      user.id,
+      user.role as UserRole,
+    );
   }
 
   @Delete(":id/certifications/:locationId")
   @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async removeCertification(
+    @CurrentUser() user: { id: string; role: string },
     @Param("id") id: string,
     @Param("locationId") locationId: string,
   ) {
-    return this.usersService.removeCertification(id, locationId);
+    return this.usersService.removeCertification(
+      id,
+      locationId,
+      user.id,
+      user.role as UserRole,
+    );
   }
 
   // ── Availability ─────────────────────────────────────────────────────
@@ -104,18 +143,30 @@ export class UsersController {
   @Post(":id/availability")
   @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async addAvailability(
+    @CurrentUser() user: { id: string; role: string },
     @Param("id") id: string,
     @Body() dto: AddAvailabilityDto,
   ) {
-    return this.usersService.addAvailability(id, dto);
+    return this.usersService.addAvailability(
+      id,
+      dto,
+      user.id,
+      user.role as UserRole,
+    );
   }
 
   @Delete(":id/availability/:availabilityId")
   @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async removeAvailability(
+    @CurrentUser() user: { id: string; role: string },
     @Param("id") id: string,
     @Param("availabilityId") availabilityId: string,
   ) {
-    return this.usersService.removeAvailability(availabilityId);
+    return this.usersService.removeAvailability(
+      id,
+      availabilityId,
+      user.id,
+      user.role as UserRole,
+    );
   }
 }

@@ -25,6 +25,7 @@ import {
   Wrench,
   ChevronRight,
 } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 import { CreateStaffDialog } from "./_components/create-staff-dialog";
 
 const ROLE_BADGE: Record<string, string> = {
@@ -136,9 +137,30 @@ export default function StaffPage() {
 
       {/* Staff List */}
       {isLoading ? (
-        <Card className="p-12 text-center text-muted-foreground">
-          Loading staff…
-        </Card>
+        <div className="space-y-2">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Card key={i} className="p-4">
+              <div className="flex items-center gap-4">
+                <Skeleton className="h-10 w-10 rounded-full shrink-0" />
+                <div className="flex-1 min-w-0 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Skeleton className="h-4 w-32" />
+                    <Skeleton className="h-4 w-14 rounded-full" />
+                  </div>
+                  <Skeleton className="h-3 w-48" />
+                </div>
+                <Skeleton className="hidden md:block h-4 w-16" />
+                <div className="hidden lg:flex gap-0.5">
+                  {Array.from({ length: 7 }).map((_, j) => (
+                    <Skeleton key={j} className="h-5 w-6 rounded" />
+                  ))}
+                </div>
+                <Skeleton className="hidden lg:block h-4 w-24" />
+                <Skeleton className="hidden xl:block h-5 w-16 rounded-full" />
+              </div>
+            </Card>
+          ))}
+        </div>
       ) : filteredStaff.length === 0 ? (
         <Card className="p-12 text-center text-muted-foreground">
           <Users className="h-10 w-10 mx-auto mb-3 opacity-30" />
