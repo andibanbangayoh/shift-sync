@@ -1,499 +1,280 @@
-# ShiftSync — Multi-Location Staff Scheduling Platform
+# ShiftSync
 
-A full-stack workforce scheduling system built for **Coastal Eats**, a fictional restaurant group operating 4 locations across 2 US timezones. Built as a 72-hour assessment project for Priority Soft.
+> Multi-location workforce scheduling platform for Coastal Eats — a restaurant group spanning 4 locations and 2 US timezones.
 
----
+Handles shift creation, staff assignment with 8-constraint enforcement, swap/drop workflows, real-time notifications, overtime compliance, and fairness analytics. Built as a monorepo with NestJS (API) and Next.js (UI).
 
-## Quick Start
-
-### Test Credentials
-
-**Password for all accounts:** `Password123!`
-
-| Role    | Email                              | Access                               |
-| ------- | ---------------------------------- | ------------------------------------ |
-| Admin   | `corporate@coastaleats.com`        | All locations, full system oversight |
-| Manager | `james.wilson@coastaleats.com`     | Downtown NYC + Midtown NYC           |
-| Manager | `sarah.chen@coastaleats.com`       | Westside LA + Marina LA              |
-| Staff   | `mike.johnson@coastaleats.com`     | Bartender/Server — Downtown, Midtown |
-| Staff   | `emily.davis@coastaleats.com`      | Server/Host — Downtown               |
-| Staff   | `carlos.garcia@coastaleats.com`    | Line Cook/Prep — Midtown, Westside   |
-| Staff   | `jessica.martinez@coastaleats.com` | Bartender — Westside, Marina         |
-| Staff   | `david.kim@coastaleats.com`        | Server/Host — Marina                 |
-
-8 more staff accounts available — see seed data for full list.
+**Live Demo:** _[deployed URL]_
 
 ---
 
-## Feature Status
+## Getting Started
 
-### Core Requirements
+Log in with any account below. **Password for all accounts:** `Password123!`
 
-| Feature                     | Status         | Notes                                                    |
-| --------------------------- | -------------- | -------------------------------------------------------- |
-| User Roles & Permissions    | ✅ Complete    | Admin, Manager (multi-location), Staff                   |
-| JWT Authentication          | ✅ Complete    | Access + refresh token rotation                          |
-| Role-Based Dashboard        | ✅ Complete    | Separate views for Admin, Manager, Staff with live data  |
-| On Duty Now (live)          | ✅ Complete    | Active shifts with pulsing live indicator                |
-| Overtime Tracking           | ✅ Complete    | Alerts at ≥35 h/week with progress bars                  |
-| Unassigned Shift Detection  | ✅ Complete    | Published shifts where `assignments < headcount`         |
-| Upcoming Shifts (next 24 h) | ✅ Complete    | With assignee count badges and location/skill info       |
-| Notification Center         | ✅ Complete    | Per-user, color-coded by type, unread count              |
-| Shift Swap / Drop Requests  | 🚧 In Progress | Pending swap count tracked; approval workflow UI pending |
-| Shift Scheduling (CRUD)     | ✅ Complete    | Weekly calendar with drag-and-drop, role-scoped views    |
-| Fairness Analytics          | 🚧 In Progress | Backend data available; dashboard view pending           |
-| Audit Trail                 | 🚧 In Progress | Schema defined; logging hooks pending                    |
+> The login page also has **demo account pills** — click any pill to auto-fill credentials.
 
-### Constraints Planned
+**Admin** — `corporate@coastaleats.com` — Full access, all 4 locations
 
-1. No double-booking — same person, overlapping times, across locations
+**Managers:**
+- `james.wilson@coastaleats.com` — Downtown NYC + Midtown NYC
+- `sarah.chen@coastaleats.com` — Westside LA + Marina LA
+
+**Staff (selected):**
+- `mike.johnson@coastaleats.com` — Bartender/Server, certified at Downtown + Midtown
+- `emily.davis@coastaleats.com` — Server/Host, Downtown only
+- `carlos.garcia@coastaleats.com` — Line Cook/Prep, cross-timezone (Midtown + Westside)
+
+12 more staff accounts are seeded — see all of them on the login page.
+
+**Pages:** Dashboard (`/`), Schedule (`/schedule`), Swaps (`/swaps`), Staff (`/staff`), Analytics (`/analytics`), Audit (`/audit`), Settings (`/settings`)
+
+---
+
+## Architecture
+
+```
+┌─────────────────┐       WebSocket (Socket.IO)       ┌──────────────────┐
+│   Next.js 14    │◄────────────────────────────────►  │    NestJS 10     │
+│   App Router    │         REST API (/api)            │  Modular Backend │
+│                 │◄────────────────────────────────►  │                  │
+│  Redux Toolkit  │                                    │  Prisma 5 ORM   │
+│  RTK Query      │                                    │  Passport + JWT  │
+│  shadcn/ui      │                                    │  class-validator │
+│  Socket.IO      │                                    │  Socket.IO GW    │
+└─────────────────┘                                    └────────┬─────────┘
+                                                                │
+                                                       ┌────────▼─────────┐
+                                                       │   PostgreSQL     │
+                                                       │   (Neon / Docker)│
+                                                       │   15 models      │
+                                                       │   6 enums        │
+                                                       └──────────────────┘
+```
+
+**Monorepo:** pnpm workspaces — `apps/backend` (NestJS, port 8000) + `apps/frontend` (Next.js, port 3000)
+
+**Auth flow:** Access token (15m, `JWT_SECRET`) + refresh token (7d, `JWT_REFRESH_SECRET`, SHA-256 hashed in DB). Single-use rotation on every refresh. Three-layer validation: JWT signature → DB lookup → userId match.
+
+**Real-time:** Socket.IO gateway with JWT-authenticated connections. Per-user rooms (`user:{id}`) for targeted push. Schedule publishes, swaps, and assignments all trigger instant notifications.
+
+**Database:** 15 Prisma models across 4 domains — Auth (`User`, `RefreshToken`), Organization (`Location`, `Skill`, `ManagerLocation`, `StaffSkill`, `StaffLocationCertification`), Scheduling (`Shift`, `ShiftAssignment`, `Availability`, `AvailabilityException`, `SwapRequest`), System (`Notification`, `AuditLog`).
+
+---
+
+## What's Implemented
+
+**Scheduling** — Weekly calendar with drag-and-drop. Create one-off or recurring shifts (daily/weekly, up to 84 occurrences). Multi-step wizard: location → skill → time → headcount. Publish/unpublish with 48h cutoff. What-if impact preview before assignment.
+
+**8 Constraints** — Hard-enforced at the API level with clear violation messages and alternative staff suggestions via the eligible-staff endpoint:
+
+1. No double-booking (cross-location overlap detection)
 2. 10-hour minimum rest between shifts
-3. Skill matching — shifts require specific skills
-4. Location certification — staff work only at certified locations
-5. Availability windows — recurring + one-off exceptions
-6. 40-hour weekly limit — warning at 35 h
-7. 12-hour daily shift cap
-8. 7th consecutive day requires manager override
+3. Skill requirement matching
+4. Location certification check (soft-revoke aware)
+5. Availability window enforcement (exception-first, open-by-default)
+6. 40h weekly cap (warning at 35h)
+7. 12h daily cap (warning at 8h)
+8. 7th consecutive day block (overridable with documented reason)
+
+**Swaps & Coverage** — Staff request swaps or drops → counterparty accepts → manager approves. 3 pending request cap. Drop expiry 24h before shift (three-layer enforcement). Auto-cancel on shift edit with notifications.
+
+**Analytics** — Hours distribution per staff, premium shift (Fri/Sat evening) fairness scores, desired vs. actual hours comparison. Admin/Manager scoped.
+
+**Audit Trail** — Every change logged with before/after JSONB snapshots. Filterable by action, user, date. CSV export (Admin).
+
+**Notifications** — 15 types persisted in DB. WebSocket push to per-user rooms. Bell badge with unread count. Notification preferences (in-app toggle, email simulated).
+
+**Timezone** — All storage in UTC. Display in location's IANA timezone. Overnight shifts (11pm–3am) handled natively via UTC DateTime range. Availability is clock-time — "9am–5pm" means local at each location.
 
 ---
 
-## Technology Stack
+## Handling the Evaluation Scenarios
 
-### Backend (`apps/backend` — port `8000`)
+**Coverage emergency (Sunday Night Chaos):** Open shift → unassign caller → eligible staff list shows qualified, available replacements with real-time constraint validation → assign in 2-3 clicks → replacement gets instant WebSocket notification.
 
-| Layer      | Technology                                   |
-| ---------- | -------------------------------------------- |
-| Framework  | NestJS 10 (TypeScript, modular architecture) |
-| ORM        | Prisma 5 with PostgreSQL                     |
-| Auth       | Passport.js + JWT (access + refresh tokens)  |
-| Validation | class-validator + class-transformer          |
-| Testing    | Vitest + Supertest (unit + E2E)              |
+**Overtime trap (52-Hour Week):** Dashboard overtime widget shows staff at ≥35h with progress bars. What-If panel previews projected hours, cost, and warnings before confirming assignment. 40h+ blocked with clear error.
 
-### Frontend (`apps/frontend` — port `3000`)
+**Timezone tangle (Multi-TZ Availability):** "9am–5pm" is clock-time — resolved as 9am–5pm Eastern at NYC, 9am–5pm Pacific at LA. Constraint engine converts shift UTC to location timezone before checking.
 
-| Layer     | Technology                          |
-| --------- | ----------------------------------- |
-| Framework | Next.js 14 (App Router, TypeScript) |
-| State     | Redux Toolkit + RTK Query           |
-| UI        | Tailwind CSS + shadcn/ui            |
-| Forms     | React Hook Form + Zod               |
-| Icons     | Lucide React                        |
+**Race condition (Simultaneous Assignment):** `@@unique([shiftId, userId])` at DB level + `$transaction` serialization + optimistic locking (`version` column). Second manager sees conflict error immediately; WebSocket pushes updated state.
 
-### Infrastructure
+**Fairness complaint (Saturday Nights):** Analytics page shows hours distribution + premium shift tracking + fairness scores. Compare actual vs. desired hours over any period.
 
-| Layer      | Technology                |
-| ---------- | ------------------------- |
-| Database   | PostgreSQL 16 (Docker)    |
-| Monorepo   | pnpm workspaces           |
-| Runner     | concurrently (dev server) |
-| Containers | Docker + docker-compose   |
+**Regret swap:** Staff A cancels pending swap → original assignment unchanged → Staff B and manager get `SWAP_CANCELLED` notification. 3-request limit frees a slot.
 
 ---
 
-## Project Structure
+## Constraint Enforcement Details
+
+| Constraint | Classification | Trigger | System Response |
+|---|---|---|---|
+| Double-booking | Hard block | Overlapping times, any location | Assignment rejected; shows conflicting shift details |
+| 10h rest | Hard block | < 10h gap between shifts | Blocked; shows when rest period ends |
+| Skill mismatch | Hard block | Staff lacks required skill | Blocked; eligible staff endpoint shows qualified alternatives |
+| Location cert | Hard block | No active certification | Blocked; checks `revokedAt: null` |
+| Availability | Hard block | Outside availability window | Blocked; shows staff's available hours for that day |
+| Weekly 40h | Hard block (35h warn) | Would exceed 40h in Mon–Sun week | Warning banner at 35h; hard block at 40h+ |
+| Daily 12h | Hard block (8h warn) | Would exceed 12h in one day | Warning at 8h; hard block at 12h+ |
+| 7th day | Override | 7th unique day worked in week | Blocked unless `overrideReason` provided; logged in audit |
+
+---
+
+## Testing
+
+132 tests across 7 files — all passing:
 
 ```
-shift-sync/
-├── apps/
-│   ├── backend/                     # NestJS API
-│   │   ├── src/
-│   │   │   ├── modules/
-│   │   │   │   ├── auth/            # Login, refresh, JWT strategy
-│   │   │   │   ├── dashboard/       # GET /api/dashboard/stats (role-scoped)
-│   │   │   │   ├── shifts/          # Shift CRUD, assignments, constraints
-│   │   │   │   └── users/           # User profile & management
-│   │   │   ├── common/              # Guards, decorators, interceptors
-│   │   │   └── prisma/              # Prisma service
-│   │   ├── prisma/
-│   │   │   ├── schema.prisma        # Database schema (13 models)
-│   │   │   └── seed.ts              # Realistic test data
-│   │   └── test/
-│   │       ├── auth/                # Auth unit + E2E tests
-│   │       ├── dashboard/           # Dashboard E2E tests
-│   │       └── helpers/             # Prisma mock, test utilities
-│   └── frontend/                    # Next.js UI
-│       ├── app/
-│       │   ├── (auth)/              # Login page
-│       │   └── (dashboard)/         # Protected dashboard shell
-│       │       ├── _components/     # Role-specific dashboard views + widgets
-│       │       └── schedule/        # Weekly calendar page + shift dialogs
-│       ├── store/
-│       │   ├── api/                 # RTK Query endpoints (auth, dashboard, shifts)
-│       │   └── slices/              # Redux state (auth slice)
-│       └── components/
-│           └── ui/                  # shadcn/ui component library
-└── docker-compose.yml               # PostgreSQL + full stack containers
+ auth.service.spec.ts  — 14 unit tests  (login, tokens, refresh, logout)
+ auth.e2e.spec.ts      — 19 E2E tests   (all auth endpoints + error cases)
+ dashboard.e2e.spec.ts — 10 E2E tests   (role-scoped stats)
+ shifts.e2e.spec.ts    — 29 E2E tests   (CRUD, assignments, constraints, drag-drop)
+ swaps.e2e.spec.ts     — 22 E2E tests   (full lifecycle + edge cases)
+ users.e2e.spec.ts     — 25 E2E tests   (staff CRUD, skills, certifications)
+ audit.e2e.spec.ts     — 13 E2E tests   (logging, filtering, role access)
 ```
-
----
-
-## Database Schema
-
-**13 models across 3 domains:**
-
-**Auth & Users**
-
-- `User` — authentication, role, desired weekly hours
-- `RefreshToken` — token rotation with upsert-safe uniqueness
-
-**Scheduling**
-
-- `Location` — 4 Coastal Eats locations with IANA timezones
-- `Skill` — bartender, server, line_cook, host, prep_cook, dishwasher
-- `Shift` — date, start/end time (UTC), headcount, status (DRAFT/PUBLISHED/CANCELLED)
-- `ShiftAssignment` — staff ↔ shift join with status (ASSIGNED/CONFIRMED/CANCELLED)
-- `ManagerLocation` — which managers oversee which locations
-- `StaffSkill` — which skills each staff member holds
-- `StaffLocationCertification` — which locations each staff member is certified for
-
-**Scheduling Policies**
-
-- `Availability` — recurring weekly windows (e.g., Mon–Fri 9am–5pm)
-- `AvailabilityException` — one-off date overrides
-- `SwapRequest` — SWAP or DROP workflow (PENDING → ACCEPTED → MANAGER_APPROVED)
-- `Notification` — 15 notification types with read/unread tracking
-- `AuditLog` — before/after change history for all mutations
-
----
-
-## API Reference
-
-### Auth
-
-| Method | Endpoint            | Description                                   | Auth   |
-| ------ | ------------------- | --------------------------------------------- | ------ |
-| POST   | `/api/auth/login`   | Returns `accessToken` + `refreshToken` + user | None   |
-| POST   | `/api/auth/refresh` | Rotates access token using refresh token      | None   |
-| POST   | `/api/auth/logout`  | Invalidates refresh token                     | Bearer |
-| GET    | `/api/auth/me`      | Returns current authenticated user            | Bearer |
-
-### Dashboard
-
-| Method | Endpoint               | Description                        | Auth   |
-| ------ | ---------------------- | ---------------------------------- | ------ |
-| GET    | `/api/dashboard/stats` | Returns role-scoped dashboard data | Bearer |
-
-### Shifts
-
-| Method | Endpoint                           | Description                                  | Auth   | Roles         |
-| ------ | ---------------------------------- | -------------------------------------------- | ------ | ------------- |
-| GET    | `/api/shifts?weekStart=&weekEnd=`  | List shifts for the week (location-filtered) | Bearer | All           |
-| GET    | `/api/shifts/locations`            | Locations accessible to the current user     | Bearer | All           |
-| GET    | `/api/shifts/skills`               | All available skills                         | Bearer | All           |
-| GET    | `/api/shifts/eligible-staff`       | Staff eligible at a location (+ skill)       | Bearer | Admin/Manager |
-| POST   | `/api/shifts`                      | Create a shift                               | Bearer | Admin/Manager |
-| PATCH  | `/api/shifts/:id`                  | Update shift details / publish               | Bearer | Admin/Manager |
-| PATCH  | `/api/shifts/:id/move`             | Move shift via drag-and-drop                 | Bearer | Admin/Manager |
-| POST   | `/api/shifts/:id/assign`           | Assign staff to a shift                      | Bearer | Admin/Manager |
-| DELETE | `/api/shifts/:id/assign/:assignId` | Remove a staff assignment                    | Bearer | Admin/Manager |
-| DELETE | `/api/shifts/:id`                  | Delete a draft shift                         | Bearer | Admin/Manager |
-
-**`GET /api/dashboard/stats` response shape:**
-
-```ts
-{
-  onDutyNow: OnDutyItem[];         // shifts active right now with assigned staff
-  todaysOnDutyCount: number;       // total assigned staff across today's shifts
-  unassignedCount: number;         // published future shifts where assignments < headcount
-  overtimeAlerts: OvertimeAlert[]; // staff at ≥35 h this week (empty for STAFF role)
-  pendingSwaps: number;            // pending swap/drop requests
-  upcomingShifts: UpcomingShift[]; // next 24 h shifts (own shifts only for STAFF)
-  recentNotifications: Notification[]; // last 5 for the requesting user
-  unreadNotificationCount: number;
-  myHoursThisWeek: number;         // scheduled hours this week (STAFF only)
-}
-```
-
-**Role scoping:**
-
-- `ADMIN` → all locations
-- `MANAGER` → filtered to their `managedLocationIds`
-- `STAFF` → upcoming shifts filtered to own assignments; overtime alerts not returned
-
----
-
-## Role-Based Dashboard
-
-Each role gets a distinct dashboard view with live data from the API:
-
-### Admin Dashboard
-
-- 4 stat cards: On Duty Now (green), Overtime Alerts (amber), Pending Swaps (blue), Unassigned Shifts (purple)
-- On Duty Now panel — live staff with gradient initials, location, skill, shift end time
-- Overtime Alerts — progress bars showing hours vs the 40 h limit
-- Upcoming Shifts — next 24 h with assignee count badge (green = full, orange = open slots)
-- Recent Notifications — color-coded by type
-- Quick Actions panel + system status summary
-
-### Manager Dashboard
-
-- Same 4 stat cards — scoped to their managed locations only
-- On Duty Now, Overtime Alerts, Upcoming Shifts, Notifications
-- My Locations panel — lists managed locations with address and timezone
-
-### Staff Dashboard
-
-- 4 stat cards: Upcoming Shifts (purple), Hours This Week vs target (blue), Pending Swaps (amber), Certified Locations (green)
-- Upcoming Shifts — own shifts only, no team headcount shown
-- Notifications — personal notifications only
-- My Skills — skill badges
-- Certified Locations — with timezone info
-
----
-
-## Schedule Page
-
-The `/schedule` route provides a weekly calendar grid for viewing and managing shifts.
-
-### Weekly Calendar
-
-- **7-day grid** (Mon–Sun) — shifts grouped by day column, no fixed time-slot rows
-- **Week navigation** — previous/next week buttons + "Today" shortcut
-- **Today column** highlighted with accent background and "Today" badge
-- **Drag-and-drop** — drag a shift card to a different day column to reschedule (preserves original time, uses optimistic locking via `version` field)
-- **Click empty day** to create a new shift pre-filled with that date
-- **Click shift card** to view details, assign/unassign staff, publish, or delete
-- **Recurring shifts** — create daily or weekly repeating shifts in one action (up to 84 daily / 12 weekly occurrences)
-
-### Role-Specific Behaviour
-
-| Role    | Locations Visible                       | Staff Visible                                   | Can Create / Edit | Can Assign Staff                                     |
-| ------- | --------------------------------------- | ----------------------------------------------- | ----------------- | ---------------------------------------------------- |
-| Admin   | All locations + "All Locations" filter  | All staff across all locations                  | Yes               | Any certified staff at the shift's location          |
-| Manager | Only their managed locations            | Only staff certified at their managed locations | Yes               | Any staff certified at their location (cross-branch) |
-| Staff   | Published shifts at certified locations | N/A                                             | No (read-only)    | No                                                   |
-
-**Key rules:**
-
-- A manager CAN assign a staff member from another branch, as long as that person is certified at the manager's location. They CANNOT create shifts at locations they don't manage.
-- Managers can only query eligible staff for locations they manage — the `GET /api/shifts/eligible-staff` endpoint enforces this.
-- Staff only see **published** shifts; draft and cancelled shifts are hidden from the staff calendar.
-- Selecting a required skill filters the eligible staff list to only show users who hold that skill.
-
-### Constraint Enforcement
-
-The backend validates the following before any assignment or shift change:
-
-1. **No double-booking** — prevents assigning someone to overlapping shifts across locations
-2. **10-hour rest** — checks that the staff member has ≥10 hours between shift end and next shift start
-3. **Skill match** — the staff member must hold the required skill for the shift
-4. **Location certification** — the staff member must be certified at the shift's location
-5. **Headcount limit** — cannot exceed the shift's required headcount
-6. **Weekly 40-hour limit** — hard block if assignment would push staff past 40 h/week
-7. **Weekly 35-hour warning** — assignment succeeds but returns an overtime warning banner
-8. **Daily 12-hour cap** — hard block if total daily hours for a staff member exceed 12 h
-9. **Daily 8-hour warning** — assignment succeeds but warns if daily hours exceed 8 h
-10. **48-hour cutoff** — published shifts starting within 48 hours cannot be edited (admin override pending)
-11. **Optimistic locking** — concurrent edits are detected via `version` mismatch → 409 Conflict
-
-### Components
-
-| Component           | Path                                           | Description                                                                  |
-| ------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------- |
-| Weekly Calendar     | `schedule/_components/weekly-calendar.tsx`     | Main grid with navigation, location filter, drag-and-drop                    |
-| Shift Card          | `schedule/_components/shift-card.tsx`          | Draggable card with inline preview — time, skill, location, assignment count |
-| Create Shift Dialog | `schedule/_components/create-shift-dialog.tsx` | Form to create shifts with eligible staff preview                            |
-| Shift Detail Dialog | `schedule/_components/shift-detail-dialog.tsx` | View shift info, assign/unassign, publish/delete                             |
-
----
-
-## Setup & Development
-
-### Prerequisites
-
-- Node.js ≥ 20
-- pnpm ≥ 9
-- Docker (for PostgreSQL)
-
-### 1. Clone and install
 
 ```bash
-git clone https://github.com/your-username/shift-sync.git
-cd shift-sync
-pnpm install
+pnpm test             # from root
+cd apps/backend && npm test  # backend only
 ```
 
-### 2. Configure environment
+---
+
+## API Overview
+
+48 endpoints across 7 controllers — full tables in [docs/API_REFERENCE.md](docs/API_REFERENCE.md).
+
+| Controller | Count | Scope |
+|---|---|---|
+| Auth | 12 | Login, JWT rotation, profile, availability, skills, exceptions |
+| Shifts | 11 | CRUD, publish, assign, move, eligible-staff, what-if |
+| Swaps | 7 | Request, respond, resolve, cancel, stats, coworkers |
+| Users | 10 | CRUD, skills, certifications, availability |
+| Dashboard | 2 | Stats, analytics |
+| Notifications | 4 | List, unread count, mark read |
+| Audit | 2 | Logs, CSV export |
+
+---
+
+## Design Decisions
+
+18 documented decisions resolving every ambiguity in the requirements — full writeup in [docs/DESIGN_DECISIONS.md](docs/DESIGN_DECISIONS.md).
+
+**Ambiguity resolutions (from the requirements "Intentional Ambiguities" section):**
+
+- **De-certification history** — Soft-revoke via `revokedAt` timestamp. All past assignments preserved for audit/payroll. Re-certification restores the same record.
+- **Desired hours vs. availability** — Availability = hard constraint (blocks assignment). Desired hours = soft target (fairness analytics only, never blocks).
+- **Consecutive day counting** — Any shift, any duration, counts as a worked day. Aligns with California IWC "day of work" definition.
+- **Swap + shift edit conflict** — Pending/accepted swaps auto-cancelled when shift time/date changes. All parties notified. Audit logged as `SWAP_AUTO_CANCELLED`.
+- **Timezone boundary locations** — One IANA timezone per location. Near a state line? Create two locations; staff can be certified for both.
+
+**Technical decisions:**
+
+- **Availability checking** — Exceptions override recurring rules (exception-first). No availability set = unrestricted (open-by-default).
+- **Overnight shifts** — Full UTC DateTime columns for both start and end. No special midnight logic needed.
+- **48h cutoff** — Computed dynamically (`startTime - 48h`), not stored. Enforced in both backend (throws) and frontend (disables controls).
+- **Concurrent safety** — Four layers: optimistic locking (version column) + Prisma `$transaction` + DB unique constraints + WebSocket push.
+- **JWT security** — Refresh tokens SHA-256 hashed in DB. Single-use rotation. Dual signing secrets. User re-validated from DB on every request.
+- **Alternative suggestions** — Eligible-staff endpoint returns all candidates sorted available-first with structured conflict reasons (acts as the suggestion mechanism).
+- **Drop expiry** — Three-layer enforcement: blocked at creation if <24h, checked at response, lazy batch expiry on list queries.
+- **Recurring shifts** — Each occurrence is independent (no series group). Simplifies editing — no "this shift only vs. all future" complexity.
+- **Swap partner matching** — Coworker endpoint checks location cert + no time conflict only. Skill/overtime deferred to manager approval.
+
+---
+
+## Seed Data
+
+Realistic Coastal Eats scenario pre-built:
+
+- 1 admin, 2 managers, 12 staff — varied skills, availability, desired hours (20h–40h)
+- 4 locations: Downtown NYC, Midtown NYC (Eastern) / Westside LA, Marina LA (Pacific)
+- 3 cross-timezone staff (certified NYC + LA)
+- Past-week shifts seeding some staff at 36h+ (triggers overtime warnings)
+- Active in-progress shifts (populates "on-duty now" dashboard)
+- Pre-created swap/drop requests demonstrating the workflow pipeline
+
+---
+
+## Local Development
+
+**Prerequisites:** Node.js 20+, pnpm 9+, PostgreSQL (Docker or Neon)
 
 ```bash
-# Backend environment
-cp apps/backend/.env.example apps/backend/.env
+git clone https://github.com/enochkambale/shift-sync.git
+cd shift-sync && pnpm install
 ```
 
-Edit `apps/backend/.env`:
+**Environment:**
 
-```env
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/shiftsync?schema=public
-JWT_SECRET=your-secret-here
-JWT_REFRESH_SECRET=your-refresh-secret-here
+```bash
+# apps/backend/.env
+DATABASE_URL=postgresql://user:pass@host:5432/db?sslmode=require
+JWT_SECRET=your-jwt-secret
+JWT_REFRESH_SECRET=your-refresh-secret
 BACKEND_PORT=8000
 FRONTEND_URL=http://localhost:3000
-```
 
-Frontend environment (`apps/frontend/.env.local`):
-
-```env
+# apps/frontend/.env.local
 NEXT_PUBLIC_API_URL=http://localhost:8000/api
 ```
 
-### 3. Start the database
+**Database:**
 
 ```bash
-docker-compose up -d postgres
-```
-
-### 4. Run migrations and seed
-
-```bash
-pnpm db:push     # Apply schema to database
-pnpm db:seed     # Populate with realistic test data
-```
-
-The seed creates:
-
-- 1 admin, 2 managers, 12 staff across 4 locations
-- 6 skills with staff assignments
-- Location certifications (including cross-timezone staff)
-- Weekly availability for all staff
-- Active shifts (on duty right now), past-week shifts triggering overtime alerts
-- Upcoming shifts with partial assignments (unassigned slots visible)
-- Pending swap requests
-- Notifications for all user types
-
-### 5. Start development servers
-
-```bash
-pnpm dev
-```
-
-This starts both apps concurrently:
-
-- Backend: [http://localhost:8000](http://localhost:8000)
-- Frontend: [http://localhost:3000](http://localhost:3000)
-
-Or start individually:
-
-```bash
-pnpm dev:backend
-pnpm dev:frontend
-```
-
----
-
-## Running Tests
-
-```bash
-# All tests (from root)
-pnpm test
-
-# From backend directory
 cd apps/backend
-npm test          # 43 tests: 14 unit + 29 E2E
-npm run test:cov  # With coverage report
+npx prisma db push && npx prisma db seed
 ```
 
-**Test suite breakdown:**
-
-| File                                   | Type | Count | Coverage                                               |
-| -------------------------------------- | ---- | ----- | ------------------------------------------------------ |
-| `test/auth/auth.service.spec.ts`       | Unit | 14    | AuthService — login, token generation, refresh, logout |
-| `test/auth/auth.e2e.spec.ts`           | E2E  | 19    | POST /login, /refresh, /logout, /me                    |
-| `test/dashboard/dashboard.e2e.spec.ts` | E2E  | 10    | GET /dashboard/stats — all 3 roles + scoping           |
-
----
-
-## Docker (Full Stack)
-
-To run the entire stack in containers:
+**Run:**
 
 ```bash
-docker-compose up --build
+pnpm dev                # both apps
+pnpm dev:backend        # API only (localhost:8000)
+pnpm dev:frontend       # UI only (localhost:3000)
+docker-compose up --build  # full stack via Docker
 ```
-
-Services:
-
-- `postgres` — PostgreSQL 16 on port 5432
-- `backend` — NestJS API on port 8000
-- `frontend` — Next.js on port 3000
-
----
-
-## Key Design Decisions
-
-### Timezone storage
-
-Shift times are stored as UTC `DateTime` in PostgreSQL. Display formatting applies the location's IANA timezone at the UI layer. This avoids DST edge cases at the database level while correctly rendering local times for each location.
-
-### Staff availability
-
-Availability windows use "clock time" — a staff member available "9am–5pm" means 9am–5pm local time at whichever location's shift they're being assigned to. This matches the mental model of staff setting their own availability without needing to think in UTC.
-
-### JWT token rotation
-
-Refresh tokens use `upsert` rather than `create` — this prevents unique constraint violations when the same JWT payload is generated within the same second (reproducible in fast test runs). The old token is replaced atomically.
-
-### Role scoping at the service layer
-
-All role-based data filtering happens inside `DashboardService.getStats()`, not in the controller or frontend. This means the frontend can call a single endpoint regardless of role — the backend returns only what that role is authorised to see.
-
-### Historical data on de-certification
-
-If a staff member is de-certified from a location, their historical `ShiftAssignment` records are preserved unchanged. Only future assignments at that location are blocked. This maintains audit integrity and labour law compliance.
-
-### Consecutive day calculation
-
-Any shift of any length counts as a worked day. A 1-hour opening shift on Sunday counts the same as an 11-hour Saturday close. This is the safest interpretation for labour compliance purposes.
-
----
-
-## Evaluation Scenarios
-
-### 1. Sunday Night Chaos (coverage emergency)
-
-> A staff member calls out at 6pm for a 7pm shift.
-
-The On Duty Now panel on the manager dashboard shows current shift coverage in real time. The Upcoming Shifts widget highlights the open slot (orange badge = headcount not met). From there the manager opens the assignment flow, which will validate skill match, location certification, availability, and rest period before confirming.
-
-### 2. The Overtime Trap (52-hour week)
-
-> A manager inadvertently schedules someone into overtime.
-
-The Overtime Alerts card and widget show all staff at ≥35 h this week with a progress bar toward the 40 h threshold. Carlos Garcia and Ryan Taylor are pre-seeded into an overtime state so this is visible immediately after login.
-
-### 3. The Timezone Tangle
-
-> Staff certified at EST and PST locations sets "9am–5pm" availability.
-
-Availability is stored as clock time. When assigning to Downtown NYC (America/New_York), "9am" means 9am Eastern. When assigning to Westside LA (America/Los_Angeles), "9am" means 9am Pacific. The constraint engine resolves each assignment to the shift location's timezone before checking availability.
-
-### 4. Simultaneous Assignment (race condition)
-
-> Two managers try to assign the same bartender at the same time.
-
-`ShiftAssignment` has a `@@unique([shiftId, userId])` constraint at the database level. The second write will fail with a unique constraint error, which the API surfaces as a 409 conflict. The `version` field on both `Shift` and `ShiftAssignment` enables optimistic locking for concurrent edits to the same record.
-
-### 5. The Fairness Complaint (Saturday night distribution)
-
-> An employee claims they never get the desirable shifts.
-
-The backend tracks all assignments with timestamps. The fairness analytics dashboard (in progress) will aggregate hours and premium-shift counts per staff member over a selected period, surfacing the distribution variance versus desired hours.
-
-### 6. The Regret Swap (cancelling a pending swap)
-
-> Staff A wants to cancel a swap before the manager approves.
-
-Staff can cancel their own `PENDING` swap requests. The original `ShiftAssignment` record is untouched until `MANAGER_APPROVED`. All parties receive a `SWAP_CANCELLED` notification. The 3-concurrent-request limit is enforced at creation.
 
 ---
 
 ## Known Limitations
 
-- **No real-time push yet** — dashboard data requires a manual refresh; WebSocket/SSE integration is planned
-- **Shift CRUD UI** — weekly calendar with drag-and-drop is complete; availability window checking during assignment is not yet wired
-- **Email notifications** — notification records are created in the database; external delivery (e.g., SendGrid) is not wired up
-- **Fairness & audit UI** — data models and backend queries exist; frontend pages not yet built
-- **No mobile optimisation** — the UI is responsive but not specifically designed for small screens
+- Email notifications simulated (DB records only — production would use SendGrid/SES)
+- UI is responsive but not mobile-optimized
+- Schedule view optimized for weekly ranges, not year-long queries
+- Requires active internet connection (no offline mode)
 
 ---
 
-**Built by Enoch Kambale**
+## Repository Layout
+
+```
+shift-sync/
+├── apps/
+│   ├── backend/                  # NestJS API
+│   │   ├── src/modules/
+│   │   │   ├── auth/             # JWT, profile, availability, skills
+│   │   │   ├── shifts/           # CRUD, assignments, constraints
+│   │   │   ├── swaps/            # Swap/drop lifecycle
+│   │   │   ├── users/            # Staff management
+│   │   │   ├── dashboard/        # Stats + analytics
+│   │   │   ├── notifications/    # WebSocket gateway + CRUD
+│   │   │   └── audit/            # Logging + CSV export
+│   │   ├── common/               # Guards, decorators, filters
+│   │   ├── prisma/               # DB service
+│   │   └── test/                 # 132 tests
+│   └── frontend/                 # Next.js UI
+│       ├── app/(dashboard)/      # All protected pages
+│       ├── store/api/            # RTK Query endpoints
+│       └── components/ui/        # shadcn/ui library
+├── docs/                         # Extended documentation
+│   ├── DESIGN_DECISIONS.md       # 18 documented decisions
+│   ├── API_REFERENCE.md          # Full endpoint tables
+│   └── FEATURES.md               # Feature deep-dives
+├── docker-compose.yml
+└── README.md
+```
+
+---
+
+Built by **Emmanuel Agba**
