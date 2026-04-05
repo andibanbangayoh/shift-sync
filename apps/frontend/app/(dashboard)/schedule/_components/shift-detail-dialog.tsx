@@ -47,6 +47,7 @@ import {
 import {
   useCreateSwapMutation,
   useGetCoworkersQuery,
+  useListSwapsQuery,
 } from "@/store/api/swapsApi";
 import {
   Tooltip,
@@ -116,6 +117,12 @@ export function ShiftDetailDialog({
     { skip: !shift || !showSwapPicker },
   );
 
+  // Fetch user's pending swaps to detect existing requests for this shift
+  const { data: pendingSwaps = [] } = useListSwapsQuery(
+    { status: "PENDING" },
+    { skip: !shift || !user || canEdit },
+  );
+
   if (!shift) return null;
 
   const isFull = shift.assignments.length >= shift.headcount;
@@ -132,6 +139,15 @@ export function ShiftDetailDialog({
       ? shift.assignments.find((a) => a.user.id === user.id)
       : null;
 
+  // Check if there's already a pending/accepted request for this assignment
+  const pendingRequestForShift = myAssignment
+    ? pendingSwaps.find(
+        (s) =>
+          s.requestorAssignment.id === myAssignment.id &&
+          (s.status === "PENDING" || s.status === "ACCEPTED"),
+      )
+    : null;
+
   async function handleDropRequest() {
     if (!myAssignment) return;
     setError("");
@@ -141,8 +157,8 @@ export function ShiftDetailDialog({
         requestorAssignmentId: myAssignment.id,
         type: "DROP",
       }).unwrap();
-      setSwapSuccess("Drop request submitted! A manager will review it.");
       toast.success("Drop request submitted");
+      onOpenChange(false);
     } catch (err: any) {
       const msg = err?.data?.message || "Failed to submit drop request";
       const errStr = Array.isArray(msg) ? msg.join(", ") : msg;
@@ -161,11 +177,8 @@ export function ShiftDetailDialog({
         type: "SWAP",
         targetUserId,
       }).unwrap();
-      setSwapSuccess(
-        "Swap request submitted! The target staff member will be notified.",
-      );
       toast.success("Swap request submitted");
-      setShowSwapPicker(false);
+      onOpenChange(false);
     } catch (err: any) {
       const msg = err?.data?.message || "Failed to submit swap request";
       const errStr = Array.isArray(msg) ? msg.join(", ") : msg;
@@ -510,12 +523,6 @@ export function ShiftDetailDialog({
                               </span>
                             </>
                           )}
-                          <span className="text-muted-foreground">
-                            Cost impact:
-                          </span>
-                          <span>
-                            +${whatIfData.impact.additionalCost.toFixed(2)}
-                          </span>
                         </div>
                         {whatIfData.warnings.map((w, i) => (
                           <p
@@ -583,7 +590,7 @@ export function ShiftDetailDialog({
             </Card>
           )}
 
-          {/* Error */}
+          {/* Error
           {error && (
             <Card className="p-3 border-destructive bg-destructive/5">
               <div className="flex items-start gap-2">
@@ -591,27 +598,27 @@ export function ShiftDetailDialog({
                 <p className="text-sm text-destructive">{error}</p>
               </div>
             </Card>
-          )}
+          )} */}
 
           {/* Overtime warning */}
-          {warning && (
+          {/* {warning && (
             <Card className="p-3 border-amber-400 bg-amber-50">
               <div className="flex items-start gap-2">
                 <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5" />
                 <p className="text-sm text-amber-700">{warning}</p>
               </div>
             </Card>
-          )}
+          )} */}
 
           {/* Swap success */}
-          {swapSuccess && (
+          {/* {swapSuccess && (
             <Card className="p-3 border-green-400 bg-green-50">
               <div className="flex items-start gap-2">
                 <CheckCircle2 className="h-4 w-4 text-green-600 mt-0.5" />
                 <p className="text-sm text-green-700">{swapSuccess}</p>
               </div>
             </Card>
-          )}
+          )} */}
 
           {/* Staff: Request Swap / Drop */}
           {myAssignment && !swapSuccess && (
@@ -620,7 +627,25 @@ export function ShiftDetailDialog({
               <div className="space-y-3">
                 <p className="text-sm font-medium">Shift Actions</p>
 
-                {!showSwapPicker ? (
+                {pendingRequestForShift ? (
+                  <Card className="p-3 border-amber-300 bg-amber-50">
+                    <div className="flex items-start gap-2">
+                      <Clock className="h-4 w-4 text-amber-600 mt-0.5" />
+                      <div>
+                        <p className="text-sm text-amber-700 font-medium">
+                          {pendingRequestForShift.type === "DROP"
+                            ? "Drop request pending"
+                            : "Swap request pending"}
+                        </p>
+                        <p className="text-xs text-amber-600 mt-0.5">
+                          {pendingRequestForShift.status === "ACCEPTED"
+                            ? "Accepted — awaiting manager approval"
+                            : "Waiting for response"}
+                        </p>
+                      </div>
+                    </div>
+                  </Card>
+                ) : !showSwapPicker ? (
                   <div className="flex gap-2">
                     <Button
                       size="sm"

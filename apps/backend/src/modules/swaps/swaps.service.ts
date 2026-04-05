@@ -180,6 +180,19 @@ export class SwapsService {
       throw new BadRequestException("This assignment is already cancelled");
     }
 
+    // Check for existing pending/accepted request on this assignment
+    const existingRequest = await this.prisma.swapRequest.findFirst({
+      where: {
+        requestorAssignmentId: dto.requestorAssignmentId,
+        status: { in: ["PENDING", "ACCEPTED"] },
+      },
+    });
+    if (existingRequest) {
+      throw new BadRequestException(
+        `You already have a pending ${existingRequest.type.toLowerCase()} request for this shift`,
+      );
+    }
+
     // Check max 3 pending requests
     const pendingCount = await this.prisma.swapRequest.count({
       where: {
