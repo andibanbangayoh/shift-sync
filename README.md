@@ -4,11 +4,9 @@
 
 Handles shift creation, staff assignment with 8-constraint enforcement, swap/drop workflows, real-time notifications, overtime compliance, and fairness analytics. Built as a monorepo with NestJS (API) and Next.js (UI).
 
-**Live Demo:** _[deployed URL]_
+**Live Demo:**
 
-### Demo Walkthrough
-
-[![ShiftSync Demo](https://cdn.loom.com/sessions/thumbnails/c7c5e48ac9c14cd1beed4246d188a5f4-with-play.gif)](https://www.loom.com/share/c7c5e48ac9c14cd1beed4246d188a5f4)
+[![Watch Demo](docs/shiftsync-demo.png)](https://www.loom.com/share/c7c5e48ac9c14cd1beed4246d188a5f4)
 
 ---
 
