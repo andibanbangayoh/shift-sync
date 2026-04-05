@@ -9,8 +9,6 @@ import {
   useRemoveStaffSkillMutation,
   useAddStaffCertificationMutation,
   useRemoveStaffCertificationMutation,
-  useAddStaffAvailabilityMutation,
-  useRemoveStaffAvailabilityMutation,
   type StaffDetail,
   type AvailabilitySlot,
 } from "@/store/api/staffApi";
@@ -28,12 +26,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   ArrowLeft,
   Mail,
@@ -603,20 +595,9 @@ function LocationsCard({
 // ─── Availability Card ─────────────────────────────────────────────────────────
 
 function AvailabilityCard({ member }: { member: StaffDetail }) {
-  const [addAvail, { isLoading: adding }] = useAddStaffAvailabilityMutation();
-  const [removeAvail] = useRemoveStaffAvailabilityMutation();
-  const [showAdd, setShowAdd] = useState(false);
-  const [newDay, setNewDay] = useState("1"); // Monday default
-  const [newStart, setNewStart] = useState("09:00");
-  const [newEnd, setNewEnd] = useState("17:00");
-  const [error, setError] = useState("");
-
-  // Group by day
-  const byDay = new Map<number, AvailabilitySlot[]>();
+  const byDay = new Map<number, AvailabilitySlot>();
   for (const slot of member.availabilities) {
-    const arr = byDay.get(slot.dayOfWeek) || [];
-    arr.push(slot);
-    byDay.set(slot.dayOfWeek, arr);
+    byDay.set(slot.dayOfWeek, slot);
   }
 
   const totalHours = member.availabilities.reduce((sum, s) => {
@@ -625,24 +606,6 @@ function AvailabilityCard({ member }: { member: StaffDetail }) {
     return sum + (eh + em / 60 - (sh + sm / 60));
   }, 0);
 
-  async function handleAdd() {
-    setError("");
-    try {
-      await addAvail({
-        userId: member.id,
-        dayOfWeek: parseInt(newDay),
-        startTime: newStart,
-        endTime: newEnd,
-      }).unwrap();
-      setShowAdd(false);
-      setNewStart("09:00");
-      setNewEnd("17:00");
-    } catch (err: any) {
-      const msg = err?.data?.message || "Failed to add availability";
-      setError(Array.isArray(msg) ? msg.join(", ") : msg);
-    }
-  }
-
   return (
     <Card className="p-5">
       <div className="flex items-center justify-between mb-4">
@@ -650,142 +613,76 @@ function AvailabilityCard({ member }: { member: StaffDetail }) {
           <CalendarDays className="h-4 w-4 text-muted-foreground" />
           Weekly Availability
         </h2>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">
-            {totalHours.toFixed(0)}h total
-          </span>
-          <Button size="sm" variant="outline" onClick={() => setShowAdd(true)}>
-            <Plus className="h-3 w-3 mr-1" />
-            Add Slot
-          </Button>
-        </div>
+        <span className="text-xs text-muted-foreground">
+          {totalHours.toFixed(0)}h total
+        </span>
       </div>
 
-      {member.availabilities.length === 0 ? (
-        <p className="text-sm text-muted-foreground text-center py-6">
-          No weekly availability set. Add time slots to indicate when this staff
-          member can work.
-        </p>
-      ) : (
-        <div className="space-y-3">
-          {DAY_NAMES.map((dayName, dayIdx) => {
-            const slots = byDay.get(dayIdx);
-            if (!slots || slots.length === 0) return null;
+      <div className="space-y-2">
+        {DAY_NAMES.map((dayName, dayIdx) => {
+          const slot = byDay.get(dayIdx);
+          const enabled = !!slot;
+          const hours = enabled
+            ? (() => {
+                const [sh, sm] = slot.startTime.split(":").map(Number);
+                const [eh, em] = slot.endTime.split(":").map(Number);
+                return Math.max(0, eh + em / 60 - (sh + sm / 60));
+              })()
+            : 0;
 
-            return (
-              <div key={dayIdx}>
-                <p className="text-xs font-medium text-muted-foreground mb-1">
-                  {dayName}
-                </p>
-                <div className="space-y-1">
-                  {slots.map((slot) => (
-                    <div
-                      key={slot.id}
-                      className="flex items-center justify-between py-1.5 px-3 rounded bg-primary/5"
-                    >
-                      <div className="flex items-center gap-2 text-sm">
-                        <Clock className="h-3.5 w-3.5 text-primary" />
-                        <span className="font-medium">{slot.startTime}</span>
-                        <span className="text-muted-foreground">→</span>
-                        <span className="font-medium">{slot.endTime}</span>
-                      </div>
-                      <button
-                        onClick={() =>
-                          removeAvail({
-                            userId: member.id,
-                            availabilityId: slot.id,
-                          })
-                        }
-                        className="text-muted-foreground hover:text-red-500 p-1"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
+          return (
+            <div
+              key={dayIdx}
+              className={`flex items-center gap-3 py-2 px-3 rounded ${
+                enabled ? "bg-primary/5" : "bg-muted/20"
+              }`}
+            >
+              <span
+                className={`text-sm font-medium w-24 ${
+                  enabled ? "" : "text-muted-foreground"
+                }`}
+              >
+                {dayName}
+              </span>
+              {enabled ? (
+                <>
+                  <div className="flex items-center gap-2 text-sm">
+                    <Clock className="h-3.5 w-3.5 text-primary" />
+                    <span className="font-medium">{slot.startTime}</span>
+                    <span className="text-muted-foreground">→</span>
+                    <span className="font-medium">{slot.endTime}</span>
+                  </div>
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">
+                    {hours.toFixed(1)}h
+                  </span>
+                </>
+              ) : (
+                <span className="text-xs text-muted-foreground">Off</span>
+              )}
+            </div>
+          );
+        })}
+      </div>
 
-          {/* Visual day summary */}
-          <Separator />
-          <div className="flex gap-1">
-            {DAY_SHORT.map((d, i) => {
-              const hasSlots = byDay.has(i);
-              return (
-                <div
-                  key={d}
-                  className={`flex-1 text-center py-1.5 rounded text-xs font-medium ${
-                    hasSlots
-                      ? "bg-primary/10 text-primary"
-                      : "bg-muted/30 text-muted-foreground/40"
-                  }`}
-                >
-                  {d}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Add Availability Dialog */}
-      <Dialog open={showAdd} onOpenChange={setShowAdd}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Add Availability Slot</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 mt-2">
-            <div>
-              <Label>Day of Week</Label>
-              <Select value={newDay} onValueChange={setNewDay}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {DAY_NAMES.map((d, i) => (
-                    <SelectItem key={i} value={i.toString()}>
-                      {d}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+      {/* Visual day summary */}
+      <Separator className="my-3" />
+      <div className="flex gap-1">
+        {DAY_SHORT.map((d, i) => {
+          const hasSlot = byDay.has(i);
+          return (
+            <div
+              key={d}
+              className={`flex-1 text-center py-1.5 rounded text-xs font-medium ${
+                hasSlot
+                  ? "bg-primary/10 text-primary"
+                  : "bg-muted/30 text-muted-foreground/40"
+              }`}
+            >
+              {d}
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Start Time</Label>
-                <Input
-                  type="time"
-                  value={newStart}
-                  onChange={(e) => setNewStart(e.target.value)}
-                />
-              </div>
-              <div>
-                <Label>End Time</Label>
-                <Input
-                  type="time"
-                  value={newEnd}
-                  onChange={(e) => setNewEnd(e.target.value)}
-                />
-              </div>
-            </div>
-            {error && (
-              <div className="text-sm text-red-600 bg-red-50 rounded p-2">
-                {error}
-              </div>
-            )}
-            <div className="flex justify-end gap-2">
-              <Button variant="ghost" onClick={() => setShowAdd(false)}>
-                Cancel
-              </Button>
-              <Button onClick={handleAdd} disabled={adding}>
-                {adding && <Loader2 className="h-3 w-3 animate-spin mr-1" />}
-                Add Slot
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+          );
+        })}
+      </div>
     </Card>
   );
 }

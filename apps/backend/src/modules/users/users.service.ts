@@ -368,6 +368,11 @@ export class UsersService {
       throw new BadRequestException("startTime must be before endTime");
     }
 
+    // Remove existing slots for this day, then create the new one
+    await this.prisma.availability.deleteMany({
+      where: { userId, dayOfWeek: dto.dayOfWeek },
+    });
+
     return this.prisma.availability.create({
       data: {
         userId,
@@ -386,6 +391,16 @@ export class UsersService {
   ) {
     await this.assertUserAccess(callerId, callerRole, userId);
 
+    // Parse as dayOfWeek integer — support clearing by day
+    const dayOfWeek = parseInt(availabilityId);
+    if (!isNaN(dayOfWeek) && dayOfWeek >= 0 && dayOfWeek <= 6) {
+      await this.prisma.availability.deleteMany({
+        where: { userId, dayOfWeek },
+      });
+      return { success: true };
+    }
+
+    // Fallback: delete by availability ID
     const record = await this.prisma.availability.findUnique({
       where: { id: availabilityId },
     });

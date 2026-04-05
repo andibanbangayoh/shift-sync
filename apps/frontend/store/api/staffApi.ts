@@ -171,7 +171,7 @@ const staffApi = baseApi.injectEndpoints({
     }),
 
     // Availability
-    addStaffAvailability: builder.mutation<
+    setStaffDayAvailability: builder.mutation<
       AvailabilitySlot,
       {
         userId: string;
@@ -188,12 +188,12 @@ const staffApi = baseApi.injectEndpoints({
       invalidatesTags: (_r, _e, { userId }) => [{ type: "Users", id: userId }],
     }),
 
-    removeStaffAvailability: builder.mutation<
+    clearStaffDayAvailability: builder.mutation<
       void,
-      { userId: string; availabilityId: string }
+      { userId: string; dayOfWeek: number }
     >({
-      query: ({ userId, availabilityId }) => ({
-        url: `/users/${userId}/availability/${availabilityId}`,
+      query: ({ userId, dayOfWeek }) => ({
+        url: `/users/${userId}/availability/${dayOfWeek}`,
         method: "DELETE",
       }),
       invalidatesTags: (_r, _e, { userId }) => [{ type: "Users", id: userId }],
@@ -210,6 +210,6 @@ export const {
   useRemoveStaffSkillMutation,
   useAddStaffCertificationMutation,
   useRemoveStaffCertificationMutation,
-  useAddStaffAvailabilityMutation,
-  useRemoveStaffAvailabilityMutation,
+  useSetStaffDayAvailabilityMutation,
+  useClearStaffDayAvailabilityMutation,
 } = staffApi;

@@ -145,6 +145,7 @@ export class AuthService {
           where: { revokedAt: null },
           include: { location: true },
         },
+        availabilities: true,
       },
     });
 
@@ -153,6 +154,85 @@ export class AuthService {
     }
 
     return this.sanitizeUserWithRelations(user);
+  }
+
+  async updateSettings(
+    userId: string,
+    data: {
+      firstName?: string;
+      lastName?: string;
+      phone?: string;
+      notifyInApp?: boolean;
+      notifyEmail?: boolean;
+      desiredWeeklyHours?: number | null;
+    },
+  ) {
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data,
+      include: {
+        managedLocations: {
+          include: { location: true },
+        },
+        skills: {
+          include: { skill: true },
+        },
+        certifications: {
+          where: { revokedAt: null },
+          include: { location: true },
+        },
+        availabilities: true,
+      },
+    });
+
+    return this.sanitizeUserWithRelations(user);
+  }
+
+  async setMyDayAvailability(
+    userId: string,
+    data: { dayOfWeek: number; startTime: string; endTime: string },
+  ) {
+    // Remove existing slots for this day
+    await this.prisma.availability.deleteMany({
+      where: { userId, dayOfWeek: data.dayOfWeek },
+    });
+
+    return this.prisma.availability.create({
+      data: { userId, ...data },
+    });
+  }
+
+  async clearMyDayAvailability(userId: string, dayOfWeek: number) {
+    await this.prisma.availability.deleteMany({
+      where: { userId, dayOfWeek },
+    });
+    return { success: true };
+  }
+
+  async addMySkill(userId: string, skillId: string) {
+    const skill = await this.prisma.skill.findUnique({
+      where: { id: skillId },
+    });
+    if (!skill) throw new NotFoundException("Skill not found");
+
+    return this.prisma.staffSkill.upsert({
+      where: { userId_skillId: { userId, skillId } },
+      create: { userId, skillId },
+      update: {},
+      include: { skill: true },
+    });
+  }
+
+  async removeMySkill(userId: string, skillId: string) {
+    const record = await this.prisma.staffSkill.findUnique({
+      where: { userId_skillId: { userId, skillId } },
+    });
+    if (!record) throw new NotFoundException("Skill not found");
+
+    await this.prisma.staffSkill.delete({
+      where: { userId_skillId: { userId, skillId } },
+    });
+    return { success: true };
   }
 
   // ─── Private Helpers ───────────────────────────────────────────────────

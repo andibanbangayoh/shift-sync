@@ -8,6 +8,8 @@ export interface AuthUser {
   role: "ADMIN" | "MANAGER" | "STAFF";
   phone: string | null;
   desiredWeeklyHours: number | null;
+  notifyInApp: boolean;
+  notifyEmail: boolean;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -35,6 +37,13 @@ export interface AuthUser {
       isActive: boolean;
     };
     certifiedAt: string;
+  }>;
+  availabilities?: Array<{
+    id: string;
+    dayOfWeek: number;
+    startTime: string;
+    endTime: string;
+    isRecurring: boolean;
   }>;
 }
 

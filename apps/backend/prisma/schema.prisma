@@ -70,6 +70,8 @@ model User {
   role               UserRole
   phone              String?
   desiredWeeklyHours Float?
+  notifyInApp        Boolean   @default(true)
+  notifyEmail        Boolean   @default(false)
   isActive           Boolean   @default(true)
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt

@@ -57,12 +57,6 @@ const navItems: NavItem[] = [
     roles: ["ADMIN", "MANAGER"],
   },
   {
-    label: "Locations",
-    href: "/locations",
-    icon: <MapPin className="h-4 w-4" />,
-    roles: ["ADMIN"],
-  },
-  {
     label: "Analytics",
     href: "/analytics",
     icon: <BarChart3 className="h-4 w-4" />,
@@ -73,12 +67,6 @@ const navItems: NavItem[] = [
     href: "/audit",
     icon: <ClipboardList className="h-4 w-4" />,
     roles: ["ADMIN", "MANAGER"],
-  },
-  {
-    label: "Availability",
-    href: "/availability",
-    icon: <CalendarDays className="h-4 w-4" />,
-    roles: ["STAFF"],
   },
   {
     label: "Settings",
