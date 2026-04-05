@@ -6,6 +6,10 @@ Handles shift creation, staff assignment with 8-constraint enforcement, swap/dro
 
 **Live Demo:** _[deployed URL]_
 
+### Demo Walkthrough
+
+[![ShiftSync Demo](https://cdn.loom.com/sessions/thumbnails/c7c5e48ac9c14cd1beed4246d188a5f4-with-play.gif)](https://www.loom.com/share/c7c5e48ac9c14cd1beed4246d188a5f4)
+
 ---
 
 ## Getting Started
@@ -17,10 +21,12 @@ Log in with any account below. **Password for all accounts:** `Password123!`
 **Admin** — `corporate@coastaleats.com` — Full access, all 4 locations
 
 **Managers:**
+
 - `james.wilson@coastaleats.com` — Downtown NYC + Midtown NYC
 - `sarah.chen@coastaleats.com` — Westside LA + Marina LA
 
 **Staff (selected):**
+
 - `mike.johnson@coastaleats.com` — Bartender/Server, certified at Downtown + Midtown
 - `emily.davis@coastaleats.com` — Server/Host, Downtown only
 - `carlos.garcia@coastaleats.com` — Line Cook/Prep, cross-timezone (Midtown + Westside)
@@ -107,16 +113,16 @@ Log in with any account below. **Password for all accounts:** `Password123!`
 
 ## Constraint Enforcement Details
 
-| Constraint | Classification | Trigger | System Response |
-|---|---|---|---|
-| Double-booking | Hard block | Overlapping times, any location | Assignment rejected; shows conflicting shift details |
-| 10h rest | Hard block | < 10h gap between shifts | Blocked; shows when rest period ends |
-| Skill mismatch | Hard block | Staff lacks required skill | Blocked; eligible staff endpoint shows qualified alternatives |
-| Location cert | Hard block | No active certification | Blocked; checks `revokedAt: null` |
-| Availability | Hard block | Outside availability window | Blocked; shows staff's available hours for that day |
-| Weekly 40h | Hard block (35h warn) | Would exceed 40h in Mon–Sun week | Warning banner at 35h; hard block at 40h+ |
-| Daily 12h | Hard block (8h warn) | Would exceed 12h in one day | Warning at 8h; hard block at 12h+ |
-| 7th day | Override | 7th unique day worked in week | Blocked unless `overrideReason` provided; logged in audit |
+| Constraint     | Classification        | Trigger                          | System Response                                               |
+| -------------- | --------------------- | -------------------------------- | ------------------------------------------------------------- |
+| Double-booking | Hard block            | Overlapping times, any location  | Assignment rejected; shows conflicting shift details          |
+| 10h rest       | Hard block            | < 10h gap between shifts         | Blocked; shows when rest period ends                          |
+| Skill mismatch | Hard block            | Staff lacks required skill       | Blocked; eligible staff endpoint shows qualified alternatives |
+| Location cert  | Hard block            | No active certification          | Blocked; checks `revokedAt: null`                             |
+| Availability   | Hard block            | Outside availability window      | Blocked; shows staff's available hours for that day           |
+| Weekly 40h     | Hard block (35h warn) | Would exceed 40h in Mon–Sun week | Warning banner at 35h; hard block at 40h+                     |
+| Daily 12h      | Hard block (8h warn)  | Would exceed 12h in one day      | Warning at 8h; hard block at 12h+                             |
+| 7th day        | Override              | 7th unique day worked in week    | Blocked unless `overrideReason` provided; logged in audit     |
 
 ---
 
@@ -145,15 +151,15 @@ cd apps/backend && npm test  # backend only
 
 48 endpoints across 7 controllers — full tables in [docs/API_REFERENCE.md](docs/API_REFERENCE.md).
 
-| Controller | Count | Scope |
-|---|---|---|
-| Auth | 12 | Login, JWT rotation, profile, availability, skills, exceptions |
-| Shifts | 11 | CRUD, publish, assign, move, eligible-staff, what-if |
-| Swaps | 7 | Request, respond, resolve, cancel, stats, coworkers |
-| Users | 10 | CRUD, skills, certifications, availability |
-| Dashboard | 2 | Stats, analytics |
-| Notifications | 4 | List, unread count, mark read |
-| Audit | 2 | Logs, CSV export |
+| Controller    | Count | Scope                                                          |
+| ------------- | ----- | -------------------------------------------------------------- |
+| Auth          | 12    | Login, JWT rotation, profile, availability, skills, exceptions |
+| Shifts        | 11    | CRUD, publish, assign, move, eligible-staff, what-if           |
+| Swaps         | 7     | Request, respond, resolve, cancel, stats, coworkers            |
+| Users         | 10    | CRUD, skills, certifications, availability                     |
+| Dashboard     | 2     | Stats, analytics                                               |
+| Notifications | 4     | List, unread count, mark read                                  |
+| Audit         | 2     | Logs, CSV export                                               |
 
 ---
 
