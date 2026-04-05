@@ -99,8 +99,12 @@ describe("Swaps E2E", () => {
       await prisma.location.delete({ where: { id: loc.id } });
     }
     if (staleUsers.length) {
+      const staleIds = staleUsers.map((u) => u.id);
+      await prisma.auditLog.deleteMany({
+        where: { userId: { in: staleIds } },
+      });
       await prisma.user.deleteMany({
-        where: { id: { in: staleUsers.map((u) => u.id) } },
+        where: { id: { in: staleIds } },
       });
     }
 
@@ -309,6 +313,7 @@ describe("Swaps E2E", () => {
       await prisma.location.delete({ where: { id: loc.id } });
     }
 
+    await prisma.auditLog.deleteMany({ where: { userId: { in: ids } } });
     await prisma.user.deleteMany({ where: { id: { in: ids } } });
     await app.close();
   });

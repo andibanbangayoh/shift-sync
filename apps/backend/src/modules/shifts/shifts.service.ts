@@ -14,12 +14,14 @@ import {
   MoveShiftDto,
 } from "./shifts.dto";
 import { AuditService } from "../audit/audit.service";
+import { NotificationsService } from "../notifications/notifications.service";
 
 @Injectable()
 export class ShiftsService {
   constructor(
     private prisma: PrismaService,
     private audit: AuditService,
+    private notifications: NotificationsService,
   ) {}
 
   /** Resolve location IDs a user is allowed to see/manage. */
@@ -346,7 +348,8 @@ export class ShiftsService {
         entityType: "SHIFT",
         entityId: created[0].id,
         afterState: {
-          locationId: dto.locationId,
+          location: created[0].location.name,
+          skill: created[0].requiredSkill.name,
           date: dto.date,
           startTime: dto.startTime,
           endTime: dto.endTime,
@@ -363,7 +366,8 @@ export class ShiftsService {
         entityType: "SHIFT",
         entityId: s.id,
         afterState: {
-          locationId: dto.locationId,
+          location: s.location.name,
+          skill: s.requiredSkill.name,
           date: s.date,
           startTime: s.startTime,
           endTime: s.endTime,
@@ -457,6 +461,7 @@ export class ShiftsService {
       entityId: shiftId,
       beforeState,
       afterState: {
+        location: updated.location.name,
         date: updated.date,
         startTime: updated.startTime,
         endTime: updated.endTime,
@@ -464,6 +469,28 @@ export class ShiftsService {
         headcount: updated.headcount,
       },
     });
+
+    // Notify assigned staff when a shift is published or updated
+    if (updated.assignments.length > 0) {
+      const isPublish = dto.status === "PUBLISHED" && !shift.publishedAt;
+      const notificationType = isPublish
+        ? ("SCHEDULE_PUBLISHED" as const)
+        : ("SHIFT_CHANGED" as const);
+      const notifications = updated.assignments.map((a) => ({
+        userId: a.user.id,
+        type: notificationType,
+        title: isPublish ? "Schedule Published" : "Shift Updated",
+        message: isPublish
+          ? `A schedule including your shift at ${updated.location.name} has been published.`
+          : `A shift you are assigned to at ${updated.location.name} has been updated.`,
+        data: { shiftId },
+      }));
+      try {
+        await this.notifications.sendMany(notifications);
+      } catch {
+        // Best-effort notification
+      }
+    }
 
     return updated;
   }
@@ -540,6 +567,7 @@ export class ShiftsService {
       entityId: shiftId,
       beforeState: beforeMove,
       afterState: {
+        location: moved.location.name,
         date: moved.date,
         startTime: moved.startTime,
         endTime: moved.endTime,
@@ -881,12 +909,32 @@ export class ShiftsService {
       entityType: "SHIFT_ASSIGNMENT",
       entityId: result.assignment.id,
       afterState: {
-        shiftId,
-        staffUserId: dto.userId,
-        assignedBy: userId,
+        location: shift.location.name,
+        shiftDate: new Date(shift.startTime).toISOString(),
+        staffName: `${result.assignment.user.firstName} ${result.assignment.user.lastName}`,
+        staffEmail: result.assignment.user.email,
         overrideReason: dto.overrideReason || undefined,
       },
     });
+
+    // Notify the assigned staff member
+    try {
+      const locationName = shift.location.name;
+      const shiftDate = new Date(shift.startTime).toLocaleDateString("en-US", {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+      });
+      await this.notifications.send({
+        userId: dto.userId,
+        type: "SHIFT_ASSIGNED",
+        title: "New Shift Assignment",
+        message: `You have been assigned to a shift at ${locationName} on ${shiftDate}.`,
+        data: { shiftId },
+      });
+    } catch {
+      // Best-effort notification
+    }
 
     return { ...result.assignment, overtimeWarning: result.overtimeWarning };
   }
@@ -900,7 +948,16 @@ export class ShiftsService {
   ) {
     const assignment = await this.prisma.shiftAssignment.findUnique({
       where: { id: assignmentId },
-      include: { shift: true },
+      include: {
+        shift: {
+          include: {
+            location: { select: { name: true } },
+          },
+        },
+        user: {
+          select: { firstName: true, lastName: true, email: true },
+        },
+      },
     });
     if (!assignment || assignment.shiftId !== shiftId) {
       throw new NotFoundException("Assignment not found");
@@ -919,12 +976,27 @@ export class ShiftsService {
       entityType: "SHIFT_ASSIGNMENT",
       entityId: assignmentId,
       beforeState: {
-        shiftId,
-        staffUserId: assignment.userId,
+        location: assignment.shift.location.name,
+        shiftDate: new Date(assignment.shift.startTime).toISOString(),
+        staffName: `${assignment.user.firstName} ${assignment.user.lastName}`,
+        staffEmail: assignment.user.email,
         status: assignment.status,
       },
       afterState: { status: "CANCELLED" },
     });
+
+    // Notify the removed staff member
+    try {
+      await this.notifications.send({
+        userId: assignment.userId,
+        type: "SHIFT_CHANGED",
+        title: "Shift Assignment Removed",
+        message: "You have been removed from a shift assignment.",
+        data: { shiftId },
+      });
+    } catch {
+      // Best-effort notification
+    }
 
     return { success: true };
   }
@@ -950,7 +1022,6 @@ export class ShiftsService {
       entityType: "SHIFT",
       entityId: shiftId,
       beforeState: {
-        locationId: shift.locationId,
         date: shift.date,
         startTime: shift.startTime,
         endTime: shift.endTime,

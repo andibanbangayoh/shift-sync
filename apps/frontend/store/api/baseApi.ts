@@ -66,6 +66,7 @@ export const baseApi = createApi({
     "Swaps",
     "Audit",
     "Analytics",
+    "Notifications",
   ],
   endpoints: () => ({}),
 });

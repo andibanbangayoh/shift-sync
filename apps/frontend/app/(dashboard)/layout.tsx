@@ -17,11 +17,12 @@ import {
   BarChart3,
   ClipboardList,
   Settings,
-  Bell,
   LogOut,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
+import { NotificationDropdown } from "./_components/notification-dropdown";
+import { useNotificationSocket } from "@/hooks/useNotificationSocket";
 
 interface NavItem {
   label: string;
@@ -106,6 +107,9 @@ export default function DashboardLayout({
   );
   const [logout] = useLogoutMutation();
   const [mounted, setMounted] = useState(false);
+
+  // Connect to notification WebSocket for real-time updates
+  useNotificationSocket();
 
   useEffect(() => {
     setMounted(true);
@@ -214,7 +218,7 @@ export default function DashboardLayout({
       {/* Main Content Area */}
       <div className="flex flex-1 flex-col">
         {/* Top Header */}
-        <header className="flex h-16 items-center justify-between sticky top-0 border-b bg-white px-6">
+        <header className="flex h-16 items-center justify-between sticky top-0 border-b bg-white px-6 z-50">
           {/* Mobile menu button placeholder */}
           <div className="lg:hidden">
             <Clock className="h-6 w-6 text-primary" />
@@ -225,12 +229,7 @@ export default function DashboardLayout({
           {/* Right side */}
           <div className="flex items-center gap-4">
             {/* Notifications */}
-            <button className="relative rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-accent-foreground">
-              <Bell className="h-5 w-5" />
-              <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-white">
-                3
-              </span>
-            </button>
+            <NotificationDropdown />
 
             {/* User Menu */}
             <div className="flex items-center gap-2">

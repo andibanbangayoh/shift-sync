@@ -2,16 +2,13 @@ import { baseApi } from "./baseApi";
 
 export interface AuditLogEntry {
   id: string;
-  userId: string;
   action: string;
   entityType: string;
-  entityId: string;
   beforeState: Record<string, any> | null;
   afterState: Record<string, any> | null;
   reason: string | null;
   createdAt: string;
   user: {
-    id: string;
     firstName: string;
     lastName: string;
     email: string;

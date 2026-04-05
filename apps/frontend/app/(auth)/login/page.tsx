@@ -67,7 +67,9 @@ export default function LoginPage() {
       const result = await login(data).unwrap();
       dispatch(setCredentials(result));
       const redirect = searchParams.get("redirect") || "/";
-      router.push(redirect);
+      // Use window.location for a hard navigation so the middleware
+      // sees the freshly-set accessToken cookie on the very first request.
+      window.location.href = redirect;
     } catch (err: any) {
       const message =
         err?.data?.message ||

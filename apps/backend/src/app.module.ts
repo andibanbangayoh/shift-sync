@@ -7,12 +7,14 @@ import { DashboardModule } from "./modules/dashboard/dashboard.module";
 import { ShiftsModule } from "./modules/shifts/shifts.module";
 import { SwapsModule } from "./modules/swaps/swaps.module";
 import { AuditModule } from "./modules/audit/audit.module";
+import { NotificationsModule } from "./modules/notifications/notifications.module";
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
     AuditModule,
+    NotificationsModule,
     AuthModule,
     UsersModule,
     DashboardModule,

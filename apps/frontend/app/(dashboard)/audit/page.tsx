@@ -35,7 +35,10 @@ const ACTION_LABELS: Record<string, { label: string; color: string }> = {
     label: "Shift Created",
     color: "bg-green-100 text-green-800",
   },
-  SHIFT_UPDATED: { label: "Shift Updated", color: "bg-blue-100 text-blue-800" },
+  SHIFT_UPDATED: {
+    label: "Shift Updated",
+    color: "bg-blue-100 text-blue-800",
+  },
   SHIFT_PUBLISHED: {
     label: "Shift Published",
     color: "bg-purple-100 text-purple-800",
@@ -50,19 +53,34 @@ const ACTION_LABELS: Record<string, { label: string; color: string }> = {
     label: "Staff Unassigned",
     color: "bg-orange-100 text-orange-800",
   },
-  SWAP_CREATED: {
-    label: "Swap Created",
+  SWAP_REQUESTED: {
+    label: "Swap Requested",
     color: "bg-indigo-100 text-indigo-800",
   },
-  SWAP_RESOLVED: {
-    label: "Swap Resolved",
-    color: "bg-violet-100 text-violet-800",
+  DROP_REQUESTED: {
+    label: "Drop Requested",
+    color: "bg-indigo-100 text-indigo-800",
   },
-  STAFF_CREATED: {
-    label: "Staff Created",
+  SWAP_ACCEPTED: {
+    label: "Swap Accepted",
+    color: "bg-cyan-100 text-cyan-800",
+  },
+  SWAP_REJECTED_BY_TARGET: {
+    label: "Swap Rejected (Staff)",
+    color: "bg-rose-100 text-rose-800",
+  },
+  SWAP_CANCELLED: {
+    label: "Swap Cancelled",
+    color: "bg-gray-100 text-gray-800",
+  },
+  SWAP_APPROVED: {
+    label: "Swap Approved",
     color: "bg-emerald-100 text-emerald-800",
   },
-  STAFF_UPDATED: { label: "Staff Updated", color: "bg-sky-100 text-sky-800" },
+  SWAP_REJECTED_BY_MANAGER: {
+    label: "Swap Rejected (Manager)",
+    color: "bg-red-100 text-red-800",
+  },
 };
 
 const ENTITY_LABELS: Record<string, string> = {
@@ -93,6 +111,38 @@ function formatRelative(iso: string) {
   const days = Math.floor(hrs / 24);
   if (days < 7) return `${days}d ago`;
   return formatDateTime(iso);
+}
+
+/** Build a human-readable summary from audit log data. */
+function summarizeLog(log: AuditLogEntry): string {
+  const state = log.afterState || log.beforeState;
+  if (!state) return "";
+  const parts: string[] = [];
+
+  if (state.location) parts.push(`at ${state.location}`);
+  if (state.staffName) parts.push(state.staffName);
+  if (state.staffEmail) parts.push(`(${state.staffEmail})`);
+  if (state.requestor) parts.push(`by ${state.requestor}`);
+  if (state.target) parts.push(`→ ${state.target}`);
+  if (state.shiftLocation) parts.push(`at ${state.shiftLocation}`);
+
+  // Format shift date/time
+  const dateField = state.shiftDate || state.date || state.startTime;
+  if (dateField) {
+    try {
+      const d = new Date(dateField);
+      parts.push(
+        `on ${d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}`,
+      );
+    } catch {
+      // skip
+    }
+  }
+
+  if (state.status) parts.push(`→ ${state.status}`);
+  if (state.reason) parts.push(`— "${state.reason}"`);
+
+  return parts.join(" ");
 }
 
 export default function AuditPage() {
@@ -179,6 +229,17 @@ export default function AuditPage() {
                 <SelectItem value="STAFF_ASSIGNED">Staff Assigned</SelectItem>
                 <SelectItem value="STAFF_UNASSIGNED">
                   Staff Unassigned
+                </SelectItem>
+                <SelectItem value="SWAP_REQUESTED">Swap Requested</SelectItem>
+                <SelectItem value="DROP_REQUESTED">Drop Requested</SelectItem>
+                <SelectItem value="SWAP_ACCEPTED">Swap Accepted</SelectItem>
+                <SelectItem value="SWAP_REJECTED_BY_TARGET">
+                  Swap Rejected (Staff)
+                </SelectItem>
+                <SelectItem value="SWAP_CANCELLED">Swap Cancelled</SelectItem>
+                <SelectItem value="SWAP_APPROVED">Swap Approved</SelectItem>
+                <SelectItem value="SWAP_REJECTED_BY_MANAGER">
+                  Swap Rejected (Manager)
                 </SelectItem>
               </SelectContent>
             </Select>
@@ -351,8 +412,9 @@ function AuditRow({
             </Badge>
           </div>
           <p className="text-xs text-muted-foreground mt-0.5 truncate">
-            {log.entityType}:{log.entityId.slice(0, 8)}… &middot;{" "}
-            {formatRelative(log.createdAt)}
+            {summarizeLog(log) ||
+              (ENTITY_LABELS[log.entityType] ?? log.entityType)}{" "}
+            &middot; {formatRelative(log.createdAt)}
           </p>
         </div>
 
@@ -366,6 +428,86 @@ function AuditRow({
         </Button>
       </div>
     </Card>
+  );
+}
+
+/** Format state keys into friendly labels. */
+const FIELD_LABELS: Record<string, string> = {
+  location: "Location",
+  shiftLocation: "Shift Location",
+  skill: "Skill",
+  date: "Date",
+  startTime: "Start Time",
+  endTime: "End Time",
+  shiftDate: "Shift Date",
+  headcount: "Headcount",
+  status: "Status",
+  type: "Type",
+  staffName: "Staff Member",
+  staffEmail: "Staff Email",
+  requestor: "Requestor",
+  requestorEmail: "Requestor Email",
+  target: "Target Staff",
+  respondedBy: "Responded By",
+  approvedBy: "Approved By",
+  reason: "Reason",
+  overrideReason: "Override Reason",
+  recurrence: "Recurrence",
+};
+
+function formatValue(key: string, value: any): string {
+  if (value === null || value === undefined) return "—";
+  if (
+    typeof value === "string" &&
+    (key.toLowerCase().includes("date") ||
+      key.toLowerCase().includes("time")) &&
+    !isNaN(Date.parse(value))
+  ) {
+    return new Date(value).toLocaleString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  }
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
+function StateTable({
+  label,
+  state,
+  variant,
+}: {
+  label: string;
+  state: Record<string, any>;
+  variant: "before" | "after";
+}) {
+  const bg =
+    variant === "before"
+      ? "bg-red-50 border-red-200"
+      : "bg-green-50 border-green-200";
+  return (
+    <div>
+      <p className="text-xs font-medium text-muted-foreground mb-1">{label}</p>
+      <div className={`rounded-lg border ${bg} overflow-hidden`}>
+        <table className="w-full text-xs">
+          <tbody>
+            {Object.entries(state)
+              .filter(([, v]) => v !== undefined)
+              .map(([key, value]) => (
+                <tr key={key} className="border-t first:border-t-0">
+                  <td className="px-3 py-1.5 font-medium text-muted-foreground w-1/3">
+                    {FIELD_LABELS[key] ?? key}
+                  </td>
+                  <td className="px-3 py-1.5">{formatValue(key, value)}</td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
@@ -402,33 +544,18 @@ function AuditDetail({ log }: { log: AuditLogEntry }) {
         </Badge>
       </div>
 
-      {/* Entity ID */}
-      <div className="text-xs text-muted-foreground">
-        <span className="font-medium">Entity ID:</span> {log.entityId}
-      </div>
-
-      {/* Before / After */}
+      {/* Before / After as formatted tables */}
       {(log.beforeState || log.afterState) && (
         <div className="grid grid-cols-1 gap-3">
           {log.beforeState && (
-            <div>
-              <p className="text-xs font-medium text-muted-foreground mb-1">
-                Before
-              </p>
-              <pre className="text-xs bg-red-50 border border-red-200 rounded-lg p-3 overflow-auto max-h-40">
-                {JSON.stringify(log.beforeState, null, 2)}
-              </pre>
-            </div>
+            <StateTable
+              label="Before"
+              state={log.beforeState}
+              variant="before"
+            />
           )}
           {log.afterState && (
-            <div>
-              <p className="text-xs font-medium text-muted-foreground mb-1">
-                After
-              </p>
-              <pre className="text-xs bg-green-50 border border-green-200 rounded-lg p-3 overflow-auto max-h-40">
-                {JSON.stringify(log.afterState, null, 2)}
-              </pre>
-            </div>
+            <StateTable label="After" state={log.afterState} variant="after" />
           )}
         </div>
       )}

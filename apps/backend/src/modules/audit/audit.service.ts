@@ -103,16 +103,37 @@ export class AuditService {
             ).map((a) => a.id),
           },
         },
+        {
+          entityType: "SWAP_REQUEST",
+          entityId: {
+            in: (
+              await this.prisma.swapRequest.findMany({
+                where: {
+                  requestorAssignment: {
+                    shift: { locationId: { in: locationFilter } },
+                  },
+                },
+                select: { id: true },
+              })
+            ).map((s) => s.id),
+          },
+        },
       ];
     }
 
     const [logs, total] = await Promise.all([
       this.prisma.auditLog.findMany({
         where,
-        include: {
+        select: {
+          id: true,
+          action: true,
+          entityType: true,
+          beforeState: true,
+          afterState: true,
+          reason: true,
+          createdAt: true,
           user: {
             select: {
-              id: true,
               firstName: true,
               lastName: true,
               email: true,

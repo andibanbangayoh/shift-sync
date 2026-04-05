@@ -5,6 +5,8 @@ import {
   ForbiddenException,
 } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
+import { AuditService } from "../audit/audit.service";
+import { NotificationsService } from "../notifications/notifications.service";
 import { UserRole, SwapRequestStatus } from "@prisma/client";
 import {
   CreateSwapRequestDto,
@@ -46,7 +48,11 @@ const SWAP_INCLUDE = {
 
 @Injectable()
 export class SwapsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private audit: AuditService,
+    private notifications: NotificationsService,
+  ) {}
 
   // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -285,11 +291,29 @@ export class SwapsService {
 
     if (notifications.length > 0) {
       try {
-        await this.prisma.notification.createMany({ data: notifications });
+        await this.notifications.sendMany(notifications);
       } catch {
         // Notification delivery is best-effort — don't fail the swap request
       }
     }
+
+    await this.audit.log({
+      userId,
+      action: dto.type === "SWAP" ? "SWAP_REQUESTED" : "DROP_REQUESTED",
+      entityType: "SWAP_REQUEST",
+      entityId: swapRequest.id,
+      afterState: {
+        type: dto.type,
+        requestor: `${swapRequest.requestor.firstName} ${swapRequest.requestor.lastName}`,
+        requestorEmail: swapRequest.requestor.email,
+        target: swapRequest.targetUser
+          ? `${swapRequest.targetUser.firstName} ${swapRequest.targetUser.lastName}`
+          : null,
+        shiftLocation: swapRequest.requestorAssignment.shift.location.name,
+        shiftDate: swapRequest.requestorAssignment.shift.startTime,
+        status: "PENDING",
+      },
+    });
 
     return swapRequest;
   }
@@ -330,16 +354,27 @@ export class SwapsService {
     });
 
     // Notify the requestor
-    await this.prisma.notification.create({
-      data: {
-        userId: swap.requestorUserId,
-        type: dto.action === "accept" ? "SWAP_ACCEPTED" : "SWAP_REJECTED",
-        title: dto.action === "accept" ? "Swap Accepted" : "Swap Rejected",
-        message:
-          dto.action === "accept"
-            ? "Your swap request has been accepted and is awaiting manager approval."
-            : "Your swap request was rejected by the target staff member.",
-        data: { swapRequestId: swapId },
+    await this.notifications.send({
+      userId: swap.requestorUserId,
+      type: dto.action === "accept" ? "SWAP_ACCEPTED" : "SWAP_REJECTED",
+      title: dto.action === "accept" ? "Swap Accepted" : "Swap Rejected",
+      message:
+        dto.action === "accept"
+          ? "Your swap request has been accepted and is awaiting manager approval."
+          : "Your swap request was rejected by the target staff member.",
+      data: { swapRequestId: swapId },
+    });
+
+    await this.audit.log({
+      userId,
+      action:
+        dto.action === "accept" ? "SWAP_ACCEPTED" : "SWAP_REJECTED_BY_TARGET",
+      entityType: "SWAP_REQUEST",
+      entityId: swapId,
+      beforeState: { status: "PENDING" },
+      afterState: {
+        status: newStatus,
+        respondedBy: `${updated.targetUser?.firstName} ${updated.targetUser?.lastName}`,
       },
     });
 
@@ -376,16 +411,23 @@ export class SwapsService {
 
     // Notify target if they existed
     if (swap.targetUserId) {
-      await this.prisma.notification.create({
-        data: {
-          userId: swap.targetUserId,
-          type: "SWAP_CANCELLED",
-          title: "Swap Request Cancelled",
-          message: "A swap request involving you has been cancelled.",
-          data: { swapRequestId: swapId },
-        },
+      await this.notifications.send({
+        userId: swap.targetUserId,
+        type: "SWAP_CANCELLED",
+        title: "Swap Request Cancelled",
+        message: "A swap request involving you has been cancelled.",
+        data: { swapRequestId: swapId },
       });
     }
+
+    await this.audit.log({
+      userId,
+      action: "SWAP_CANCELLED",
+      entityType: "SWAP_REQUEST",
+      entityId: swapId,
+      beforeState: { status: swap.status },
+      afterState: { status: "CANCELLED" },
+    });
 
     return updated;
   }
@@ -460,13 +502,23 @@ export class SwapsService {
       });
 
       // Notify requestor
-      await this.prisma.notification.create({
-        data: {
-          userId: swap.requestorUserId,
-          type: "SWAP_REJECTED",
-          title: `${swap.type === "SWAP" ? "Swap" : "Drop"} Request Rejected`,
-          message: dto.reason || "Your request was rejected by management.",
-          data: { swapRequestId: swapId },
+      await this.notifications.send({
+        userId: swap.requestorUserId,
+        type: "SWAP_REJECTED",
+        title: `${swap.type === "SWAP" ? "Swap" : "Drop"} Request Rejected`,
+        message: dto.reason || "Your request was rejected by management.",
+        data: { swapRequestId: swapId },
+      });
+
+      await this.audit.log({
+        userId,
+        action: "SWAP_REJECTED_BY_MANAGER",
+        entityType: "SWAP_REQUEST",
+        entityId: swapId,
+        beforeState: { status: swap.status, type: swap.type },
+        afterState: {
+          status: "REJECTED",
+          reason: dto.reason,
         },
       });
 
@@ -531,7 +583,24 @@ export class SwapsService {
         data: { swapRequestId: swapId },
       });
     }
-    await this.prisma.notification.createMany({ data: notifications });
+    await this.notifications.sendMany(notifications);
+
+    await this.audit.log({
+      userId,
+      action: "SWAP_APPROVED",
+      entityType: "SWAP_REQUEST",
+      entityId: swapId,
+      beforeState: {
+        status: swap.status,
+        type: swap.type,
+      },
+      afterState: {
+        status: "MANAGER_APPROVED",
+        approvedBy: result.resolvedBy
+          ? `${result.resolvedBy.firstName} ${result.resolvedBy.lastName}`
+          : undefined,
+      },
+    });
 
     return result;
   }
