@@ -27,6 +27,24 @@ interface AddAvailabilityPayload {
   endTime: string;
 }
 
+export interface AvailabilityException {
+  id: string;
+  userId: string;
+  date: string;
+  isAvailable: boolean;
+  startTime: string | null;
+  endTime: string | null;
+  reason: string | null;
+}
+
+interface AddExceptionPayload {
+  date: string;
+  isAvailable: boolean;
+  startTime?: string;
+  endTime?: string;
+  reason?: string;
+}
+
 export const authApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
     login: builder.mutation<AuthResponse, LoginRequest>({
@@ -91,6 +109,33 @@ export const authApi = baseApi.injectEndpoints({
       invalidatesTags: ["Profile"],
     }),
 
+    // ── Availability Exceptions ───────────────────────────────────────
+
+    listMyExceptions: builder.query<AvailabilityException[], void>({
+      query: () => "/auth/me/availability-exceptions",
+      providesTags: ["AvailabilityExceptions"],
+    }),
+
+    addMyException: builder.mutation<
+      AvailabilityException,
+      AddExceptionPayload
+    >({
+      query: (body) => ({
+        url: "/auth/me/availability-exceptions",
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: ["AvailabilityExceptions"],
+    }),
+
+    removeMyException: builder.mutation<void, string>({
+      query: (id) => ({
+        url: `/auth/me/availability-exceptions/${id}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: ["AvailabilityExceptions"],
+    }),
+
     logout: builder.mutation<void, { refreshToken: string }>({
       query: (body) => ({
         url: "/auth/logout",
@@ -117,6 +162,9 @@ export const {
   useClearMyDayAvailabilityMutation,
   useAddMySkillMutation,
   useRemoveMySkillMutation,
+  useListMyExceptionsQuery,
+  useAddMyExceptionMutation,
+  useRemoveMyExceptionMutation,
   useLogoutMutation,
   useRefreshTokenMutation,
 } = authApi;

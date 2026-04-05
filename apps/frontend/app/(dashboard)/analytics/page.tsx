@@ -34,12 +34,6 @@ function getFairnessColor(score: number) {
   return "text-red-600";
 }
 
-function getDiffColor(diff: number) {
-  if (diff > 0) return "text-amber-600";
-  if (diff < 0) return "text-blue-600";
-  return "text-green-600";
-}
-
 function getDiffBg(diff: number) {
   if (diff > 0) return "bg-amber-100 text-amber-800 border-amber-200";
   if (diff < 0) return "bg-blue-100 text-blue-800 border-blue-200";

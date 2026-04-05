@@ -17,6 +17,7 @@ import { RefreshDto } from "./dto/refresh.dto";
 import {
   UpdateSettingsDto,
   AddMyAvailabilityDto,
+  AddMyExceptionDto,
 } from "./dto/update-settings.dto";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
@@ -86,6 +87,32 @@ export class AuthController {
     @Param("dayOfWeek") dayOfWeek: string,
   ) {
     return this.authService.clearMyDayAvailability(userId, parseInt(dayOfWeek));
+  }
+
+  // ── Availability Exceptions ─────────────────────────────────────────
+
+  @Get("me/availability-exceptions")
+  @UseGuards(JwtAuthGuard)
+  async listMyExceptions(@CurrentUser("id") userId: string) {
+    return this.authService.listMyExceptions(userId);
+  }
+
+  @Post("me/availability-exceptions")
+  @UseGuards(JwtAuthGuard)
+  async addMyException(
+    @CurrentUser("id") userId: string,
+    @Body() dto: AddMyExceptionDto,
+  ) {
+    return this.authService.addMyException(userId, dto);
+  }
+
+  @Delete("me/availability-exceptions/:id")
+  @UseGuards(JwtAuthGuard)
+  async removeMyException(
+    @CurrentUser("id") userId: string,
+    @Param("id") id: string,
+  ) {
+    return this.authService.removeMyException(userId, id);
   }
 
   @Post("me/skills")

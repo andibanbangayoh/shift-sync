@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useState, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useLoginMutation } from "@/store/api/authApi";
@@ -45,7 +45,14 @@ const DEMO_ACCOUNTS = [
 ];
 
 export default function LoginPage() {
-  const router = useRouter();
+  return (
+    <Suspense>
+      <LoginPageContent />
+    </Suspense>
+  );
+}
+
+function LoginPageContent() {
   const searchParams = useSearchParams();
   const dispatch = useAppDispatch();
   const [login, { isLoading }] = useLoginMutation();
@@ -88,7 +95,7 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
-      <div className="w-full max-w-md space-y-6">
+      <div className="w-full max-w-md space-y-8">
         {/* Logo / Branding */}
         <div className="text-center space-y-2">
           <div className="flex items-center justify-center gap-2">
@@ -108,6 +115,7 @@ export default function LoginPage() {
               Enter your credentials to access the platform
             </CardDescription>
           </CardHeader>
+
           <form onSubmit={handleSubmit(onSubmit)}>
             <CardContent className="space-y-4">
               {error && (
@@ -151,7 +159,8 @@ export default function LoginPage() {
                 )}
               </div>
             </CardContent>
-            <CardFooter>
+
+            <CardFooter className="flex flex-col gap-4">
               <Button type="submit" className="w-full" disabled={isLoading}>
                 {isLoading ? (
                   <>
@@ -162,42 +171,30 @@ export default function LoginPage() {
                   "Sign In"
                 )}
               </Button>
+
+              {/* Demo account pills */}
+              <div className="w-full space-y-2">
+                <p className="text-xs text-muted-foreground text-center">
+                  Demo accounts{" "}
+                  <code className="bg-muted px-1 py-0.5 rounded">
+                    Password123!
+                  </code>
+                </p>
+                <div className="flex flex-wrap gap-2 justify-center">
+                  {DEMO_ACCOUNTS.map((account) => (
+                    <button
+                      key={account.email}
+                      type="button"
+                      onClick={() => fillDemoCredentials(account.email)}
+                      className="inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+                    >
+                      {account.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </CardFooter>
           </form>
-        </Card>
-
-        {/* Demo Accounts */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Demo Accounts</CardTitle>
-            <CardDescription>
-              Click to fill credentials (password:{" "}
-              <code className="text-xs bg-muted px-1 py-0.5 rounded">
-                Password123!
-              </code>
-              )
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-2">
-            {DEMO_ACCOUNTS.map((account) => (
-              <button
-                key={account.email}
-                type="button"
-                onClick={() => fillDemoCredentials(account.email)}
-                className="flex items-center justify-between rounded-md border p-3 text-left text-sm transition-colors hover:bg-accent"
-              >
-                <div>
-                  <span className="font-medium">{account.label}</span>
-                  <p className="text-xs text-muted-foreground">
-                    {account.role}
-                  </p>
-                </div>
-                <span className="text-xs text-muted-foreground truncate ml-2 max-w-[180px]">
-                  {account.email}
-                </span>
-              </button>
-            ))}
-          </CardContent>
         </Card>
       </div>
     </div>

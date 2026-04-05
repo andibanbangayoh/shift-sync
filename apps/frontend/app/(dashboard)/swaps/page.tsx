@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from "sonner";
 import { useAppSelector } from "@/store/store";
 import {
   useListSwapsQuery,
@@ -37,11 +38,12 @@ function formatDate(dateStr: string) {
   });
 }
 
-function formatTime(dateStr: string) {
+function formatTime(dateStr: string, tz?: string) {
   return new Date(dateStr).toLocaleTimeString("en-US", {
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
+    ...(tz ? { timeZone: tz } : {}),
   });
 }
 
@@ -174,8 +176,15 @@ function SwapRequestCard({
               <div className="flex items-center gap-1.5">
                 <Clock className="h-3.5 w-3.5 text-muted-foreground" />
                 <span>
-                  {formatTime(swap.requestorAssignment.shift.startTime)} –{" "}
-                  {formatTime(swap.requestorAssignment.shift.endTime)}
+                  {formatTime(
+                    swap.requestorAssignment.shift.startTime,
+                    swap.requestorAssignment.shift.location.timezone,
+                  )}{" "}
+                  –{" "}
+                  {formatTime(
+                    swap.requestorAssignment.shift.endTime,
+                    swap.requestorAssignment.shift.location.timezone,
+                  )}
                 </span>
               </div>
               <div className="flex items-center gap-1.5">
@@ -326,24 +335,27 @@ export default function SwapsPage() {
   const handleResolve = async (id: string, action: "approve" | "reject") => {
     try {
       await resolveSwap({ id, action }).unwrap();
-    } catch {
-      // Error handled by RTK Query
+      toast.success(`Swap ${action === "approve" ? "approved" : "rejected"}`);
+    } catch (err: any) {
+      toast.error(err?.data?.message || `Failed to ${action} swap`);
     }
   };
 
   const handleRespond = async (id: string, action: "accept" | "reject") => {
     try {
       await respondToSwap({ id, action }).unwrap();
-    } catch {
-      // Error handled by RTK Query
+      toast.success(`Swap ${action === "accept" ? "accepted" : "declined"}`);
+    } catch (err: any) {
+      toast.error(err?.data?.message || `Failed to ${action} swap`);
     }
   };
 
   const handleCancel = async (id: string) => {
     try {
       await cancelSwap(id).unwrap();
-    } catch {
-      // Error handled by RTK Query
+      toast.success("Swap request cancelled");
+    } catch (err: any) {
+      toast.error(err?.data?.message || "Failed to cancel swap");
     }
   };
 
@@ -363,6 +375,14 @@ export default function SwapsPage() {
         ? approvedSwaps
         : historySwaps;
 
+  // Count the current user's own pending/accepted requests (max 3 allowed)
+  const myPendingCount = swaps.filter(
+    (s) =>
+      s.requestor.id === user.id &&
+      (s.status === "PENDING" || s.status === "ACCEPTED"),
+  ).length;
+  const atPendingLimit = myPendingCount >= 3;
+
   return (
     <div className="space-y-6">
       {/* Page Header */}
@@ -378,7 +398,33 @@ export default function SwapsPage() {
       </div>
 
       {/* Stat Cards */}
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-4">
+        {/* Pending limit indicator for staff */}
+        {user.role === "STAFF" && (
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+              <CardTitle className="text-sm font-medium">
+                Your Pending
+              </CardTitle>
+              <AlertTriangle
+                className={`h-4 w-4 ${atPendingLimit ? "text-red-500" : "text-blue-500"}`}
+              />
+            </CardHeader>
+            <CardContent>
+              <div
+                className={`text-2xl font-bold ${atPendingLimit ? "text-red-600" : "text-blue-600"}`}
+              >
+                {myPendingCount} / 3
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {atPendingLimit
+                  ? "Limit reached — resolve a request first"
+                  : "Pending request slots used"}
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
             <CardTitle className="text-sm font-medium">Needs Action</CardTitle>

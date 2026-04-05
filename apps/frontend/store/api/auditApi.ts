@@ -46,7 +46,17 @@ export const auditApi = baseApi.injectEndpoints({
       }),
       providesTags: ["Audit"],
     }),
+    exportAuditCsv: builder.query<
+      string,
+      { entityType?: string; from?: string; to?: string; action?: string }
+    >({
+      query: (params) => ({
+        url: "/audit/export",
+        params,
+        responseHandler: (response: Response) => response.text(),
+      }),
+    }),
   }),
 });
 
-export const { useGetAuditLogsQuery } = auditApi;
+export const { useGetAuditLogsQuery, useLazyExportAuditCsvQuery } = auditApi;

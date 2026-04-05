@@ -24,13 +24,15 @@ export function UpcomingShiftsWidget({
         ) : (
           <div className="space-y-3">
             {shifts.map((shift) => {
+              const tz = shift.location.timezone;
               const start = new Date(shift.startTime).toLocaleTimeString(
                 "en-US",
-                { hour: "numeric", minute: "2-digit" },
+                { hour: "numeric", minute: "2-digit", timeZone: tz },
               );
               const end = new Date(shift.endTime).toLocaleTimeString("en-US", {
                 hour: "numeric",
                 minute: "2-digit",
+                timeZone: tz,
               });
               const isFull = shift.assignedCount >= shift.headcount;
               return (

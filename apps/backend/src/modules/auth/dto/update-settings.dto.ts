@@ -49,3 +49,25 @@ export class AddMyAvailabilityDto {
   @Matches(/^\d{2}:\d{2}$/, { message: "endTime must be HH:mm format" })
   endTime!: string;
 }
+
+export class AddMyExceptionDto {
+  @IsString()
+  date!: string;
+
+  @IsBoolean()
+  isAvailable!: boolean;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{2}:\d{2}$/, { message: "startTime must be HH:mm format" })
+  startTime?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{2}:\d{2}$/, { message: "endTime must be HH:mm format" })
+  endTime?: string;
+
+  @IsOptional()
+  @IsString()
+  reason?: string;
+}

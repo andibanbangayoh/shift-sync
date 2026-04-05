@@ -155,6 +155,7 @@ export class ShiftsService {
    * Get staff who are eligible for assignment at a given location
    * and optionally match a required skill.
    * Managers can only query locations they manage.
+   * When date/startTime/endTime are provided, checks availability windows & conflicts.
    */
   async getEligibleStaff(
     userId: string,
@@ -162,6 +163,9 @@ export class ShiftsService {
     locationId: string,
     skillId?: string,
     shiftId?: string,
+    date?: string,
+    startTimeStr?: string,
+    endTimeStr?: string,
   ) {
     // Ensure the requesting user has access to this location
     await this.assertLocationAccess(userId, role, locationId);
@@ -177,6 +181,7 @@ export class ShiftsService {
             email: true,
             isActive: true,
             skills: { include: { skill: true } },
+            availabilities: true,
           },
         },
       },
@@ -204,6 +209,59 @@ export class ShiftsService {
       });
     }
 
+    // Fetch location timezone for local-time calculations
+    const location = await this.prisma.location.findUnique({
+      where: { id: locationId },
+      select: { timezone: true },
+    });
+    const tz = location?.timezone || "UTC";
+
+    // Build proposed shift times from query params (for creation flow)
+    // date/startTimeStr/endTimeStr are in the LOCATION's local time
+    let proposedStart: Date | null = null;
+    let proposedEnd: Date | null = null;
+    let proposedDayOfWeek: number | null = null;
+    let proposedLocalStartMin: number | null = null;
+    let proposedLocalEndMin: number | null = null;
+    if (date && startTimeStr && endTimeStr) {
+      // Store local time components for availability window checks
+      const [lsh, lsm] = startTimeStr.split(":").map(Number);
+      const [leh, lem] = endTimeStr.split(":").map(Number);
+      proposedLocalStartMin = lsh * 60 + lsm;
+      proposedLocalEndMin = leh * 60 + lem;
+
+      // Parse the date to get local day-of-week
+      const [year, month, day] = date.split("-").map(Number);
+      // Day of week from the local date
+      proposedDayOfWeek = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+
+      // Convert local time → UTC for overlap/rest checks
+      const naiveStart = new Date(`${date}T${startTimeStr}:00.000Z`);
+      const naiveEnd = new Date(`${date}T${endTimeStr}:00.000Z`);
+      const fmt = new Intl.DateTimeFormat("en-US", {
+        timeZone: tz,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
+      const parts = fmt.formatToParts(naiveStart);
+      const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "0";
+      const tzH = parseInt(get("hour"), 10);
+      const tzM = parseInt(get("minute"), 10);
+      const tzD = parseInt(get("day"), 10);
+      const utcH = naiveStart.getUTCHours();
+      const utcM = naiveStart.getUTCMinutes();
+      const utcD = naiveStart.getUTCDate();
+      let offsetMin = tzH * 60 + tzM - (utcH * 60 + utcM);
+      if (tzD > utcD) offsetMin += 1440;
+      if (tzD < utcD) offsetMin -= 1440;
+      proposedStart = new Date(naiveStart.getTime() - offsetMin * 60000);
+      proposedEnd = new Date(naiveEnd.getTime() - offsetMin * 60000);
+    }
+
     const results = await Promise.all(
       eligible.map(async (u) => {
         const base = {
@@ -217,26 +275,122 @@ export class ShiftsService {
           })),
         };
 
-        if (!shift) return { ...base, available: true, conflict: null };
-
-        // Already assigned?
-        if (shift.assignments.some((a: any) => a.userId === u.id)) {
-          return {
-            ...base,
-            available: false,
-            conflict: "Already assigned to this shift",
-          };
+        // ── Check against existing shift (shiftId flow) ──
+        if (shift) {
+          if (shift.assignments.some((a: any) => a.userId === u.id)) {
+            return {
+              ...base,
+              available: false,
+              conflict: "Already assigned to this shift",
+            };
+          }
         }
 
-        // Check overlapping
+        // ── Proposed time checks (either from shift or from date/time params) ──
+        const checkStart = shift?.startTime ?? proposedStart;
+        const checkEnd = shift?.endTime ?? proposedEnd;
+
+        if (!checkStart || !checkEnd) {
+          return { ...base, available: true, conflict: null };
+        }
+
+        // Check weekly availability windows
+        // Use local time for availability checks (availability is stored in local time)
+        const localStartMin =
+          proposedLocalStartMin ??
+          // For shiftId flow, convert UTC shift time to location local time
+          (() => {
+            const fmt = new Intl.DateTimeFormat("en-US", {
+              timeZone: tz,
+              hour: "2-digit",
+              minute: "2-digit",
+              hour12: false,
+            });
+            const parts = fmt.formatToParts(checkStart);
+            const h = parseInt(
+              parts.find((p) => p.type === "hour")?.value ?? "0",
+              10,
+            );
+            const m = parseInt(
+              parts.find((p) => p.type === "minute")?.value ?? "0",
+              10,
+            );
+            return h * 60 + m;
+          })();
+        const localEndMin =
+          proposedLocalEndMin ??
+          (() => {
+            const fmt = new Intl.DateTimeFormat("en-US", {
+              timeZone: tz,
+              hour: "2-digit",
+              minute: "2-digit",
+              hour12: false,
+            });
+            const parts = fmt.formatToParts(checkEnd);
+            const h = parseInt(
+              parts.find((p) => p.type === "hour")?.value ?? "0",
+              10,
+            );
+            const m = parseInt(
+              parts.find((p) => p.type === "minute")?.value ?? "0",
+              10,
+            );
+            return h * 60 + m;
+          })();
+        // Get local day-of-week (for both shiftId and proposed flows)
+        const localDay =
+          proposedDayOfWeek ??
+          (() => {
+            const fmt = new Intl.DateTimeFormat("en-US", {
+              timeZone: tz,
+              weekday: "short",
+            });
+            const wd = fmt.format(checkStart);
+            return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(
+              wd,
+            );
+          })();
+
+        if (localDay !== null && (u as any).availabilities?.length > 0) {
+          const daySlots = (u as any).availabilities.filter(
+            (a: any) => a.dayOfWeek === localDay,
+          );
+          if (daySlots.length === 0) {
+            return {
+              ...base,
+              available: false,
+              conflict: "Not available on this day",
+            };
+          }
+
+          const coversShift = daySlots.some((slot: any) => {
+            const [sh, sm] = slot.startTime.split(":").map(Number);
+            const [eh, em] = slot.endTime.split(":").map(Number);
+            const slotStart = sh * 60 + sm;
+            const slotEnd = eh * 60 + em;
+            return slotStart <= localStartMin && slotEnd >= localEndMin;
+          });
+          if (!coversShift) {
+            const availTimes = daySlots
+              .map((slot: any) => `${slot.startTime}–${slot.endTime}`)
+              .join(", ");
+            return {
+              ...base,
+              available: false,
+              conflict: `Available only ${availTimes}`,
+            };
+          }
+        }
+
+        // Check overlapping shifts
         const overlapping = await this.prisma.shiftAssignment.findFirst({
           where: {
             userId: u.id,
             status: { in: ["ASSIGNED", "CONFIRMED"] },
             shift: {
               status: { not: "CANCELLED" },
-              startTime: { lt: shift.endTime },
-              endTime: { gt: shift.startTime },
+              startTime: { lt: checkEnd },
+              endTime: { gt: checkStart },
             },
           },
           include: {
@@ -252,8 +406,8 @@ export class ShiftsService {
         }
 
         // Check 10h rest
-        const tenHBefore = new Date(shift.startTime.getTime() - 10 * 3600000);
-        const tenHAfter = new Date(shift.endTime.getTime() + 10 * 3600000);
+        const tenHBefore = new Date(checkStart.getTime() - 10 * 3600000);
+        const tenHAfter = new Date(checkEnd.getTime() + 10 * 3600000);
         const restVio = await this.prisma.shiftAssignment.findFirst({
           where: {
             userId: u.id,
@@ -261,8 +415,8 @@ export class ShiftsService {
             shift: {
               status: { not: "CANCELLED" },
               OR: [
-                { endTime: { gt: tenHBefore, lte: shift.startTime } },
-                { startTime: { gte: shift.endTime, lt: tenHAfter } },
+                { endTime: { gt: tenHBefore, lte: checkStart } },
+                { startTime: { gte: checkEnd, lt: tenHAfter } },
               ],
             },
           },
@@ -492,6 +646,11 @@ export class ShiftsService {
       }
     }
 
+    // Auto-cancel pending swap/drop requests when shift is edited (time/date changed)
+    if (dto.startTime || dto.endTime || dto.date) {
+      await this.cancelPendingSwapsForShift(shiftId, userId);
+    }
+
     return updated;
   }
 
@@ -573,6 +732,9 @@ export class ShiftsService {
         endTime: moved.endTime,
       },
     });
+
+    // Auto-cancel pending swap/drop requests when shift is moved
+    await this.cancelPendingSwapsForShift(shiftId, userId);
 
     return moved;
   }
@@ -1057,5 +1219,241 @@ export class ShiftsService {
         "You do not manage the location for this shift",
       );
     }
+  }
+
+  /**
+   * Auto-cancel all pending/accepted swap requests for assignments on a given shift.
+   * Called when a shift is edited or moved.
+   */
+  private async cancelPendingSwapsForShift(
+    shiftId: string,
+    actorUserId: string,
+  ) {
+    const pendingSwaps = await this.prisma.swapRequest.findMany({
+      where: {
+        status: { in: ["PENDING", "ACCEPTED"] },
+        requestorAssignment: { shiftId },
+      },
+      include: {
+        requestor: { select: { id: true, firstName: true, lastName: true } },
+        targetUser: { select: { id: true } },
+      },
+    });
+
+    for (const swap of pendingSwaps) {
+      await this.prisma.swapRequest.update({
+        where: { id: swap.id },
+        data: {
+          status: "CANCELLED",
+          cancellationReason: "Shift was modified by management",
+          resolvedAt: new Date(),
+          resolvedById: actorUserId,
+        },
+      });
+
+      // Notify requestor
+      const notifications: any[] = [
+        {
+          userId: swap.requestor.id,
+          type: "SWAP_CANCELLED" as const,
+          title: "Swap/Drop Request Auto-Cancelled",
+          message:
+            "Your swap/drop request was automatically cancelled because the shift was modified.",
+          data: { swapRequestId: swap.id },
+        },
+      ];
+
+      // Notify target if exists
+      if (swap.targetUser) {
+        notifications.push({
+          userId: swap.targetUser.id,
+          type: "SWAP_CANCELLED" as const,
+          title: "Swap Request Auto-Cancelled",
+          message:
+            "A swap request involving you was automatically cancelled because the shift was modified.",
+          data: { swapRequestId: swap.id },
+        });
+      }
+
+      try {
+        await this.notifications.sendMany(notifications);
+      } catch {
+        // Best-effort
+      }
+
+      await this.audit.log({
+        userId: actorUserId,
+        action: "SWAP_AUTO_CANCELLED",
+        entityType: "SWAP_REQUEST",
+        entityId: swap.id,
+        beforeState: { status: swap.status },
+        afterState: {
+          status: "CANCELLED",
+          reason: "Shift was modified by management",
+        },
+      });
+    }
+  }
+
+  /**
+   * What-if impact analysis: preview overtime/compliance effects of assigning
+   * a staff member to a shift without actually creating the assignment.
+   */
+  async whatIfAssign(
+    userId: string,
+    role: UserRole,
+    shiftId: string,
+    staffUserId: string,
+  ) {
+    const shift = await this.prisma.shift.findUnique({
+      where: { id: shiftId },
+      include: {
+        location: { select: { id: true, name: true, timezone: true } },
+        requiredSkill: { select: { id: true, name: true } },
+      },
+    });
+    if (!shift) throw new NotFoundException("Shift not found");
+    await this.assertLocationAccess(userId, role, shift.locationId);
+
+    const shiftDurationHours =
+      (shift.endTime.getTime() - shift.startTime.getTime()) / 3600000;
+
+    // Daily hours
+    const dayStart = new Date(shift.date);
+    dayStart.setUTCHours(0, 0, 0, 0);
+    const dayEnd = new Date(dayStart);
+    dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
+
+    const sameDayAssignments = await this.prisma.shiftAssignment.findMany({
+      where: {
+        userId: staffUserId,
+        status: { in: ["ASSIGNED", "CONFIRMED"] },
+        shift: {
+          status: { not: "CANCELLED" },
+          date: { gte: dayStart, lt: dayEnd },
+        },
+      },
+      include: { shift: { select: { startTime: true, endTime: true } } },
+    });
+
+    const currentDailyHours = sameDayAssignments.reduce(
+      (sum, a) =>
+        sum +
+        (a.shift.endTime.getTime() - a.shift.startTime.getTime()) / 3600000,
+      0,
+    );
+    const projectedDailyHours = currentDailyHours + shiftDurationHours;
+
+    // Weekly hours
+    const weekStartDate = new Date(shift.date);
+    const dayOfWeek = weekStartDate.getUTCDay();
+    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    weekStartDate.setUTCDate(weekStartDate.getUTCDate() + mondayOffset);
+    weekStartDate.setUTCHours(0, 0, 0, 0);
+    const weekEndDate = new Date(weekStartDate);
+    weekEndDate.setUTCDate(weekEndDate.getUTCDate() + 7);
+
+    const weekAssignments = await this.prisma.shiftAssignment.findMany({
+      where: {
+        userId: staffUserId,
+        status: { in: ["ASSIGNED", "CONFIRMED"] },
+        shift: {
+          status: { not: "CANCELLED" },
+          date: { gte: weekStartDate, lt: weekEndDate },
+        },
+      },
+      include: {
+        shift: { select: { startTime: true, endTime: true, date: true } },
+      },
+    });
+
+    const currentWeeklyHours = weekAssignments.reduce(
+      (sum, a) =>
+        sum +
+        (a.shift.endTime.getTime() - a.shift.startTime.getTime()) / 3600000,
+      0,
+    );
+    const projectedWeeklyHours = currentWeeklyHours + shiftDurationHours;
+
+    // Consecutive days
+    const workedDays = new Set<number>();
+    for (const a of weekAssignments) {
+      workedDays.add(new Date(a.shift.date).getUTCDay());
+    }
+    workedDays.add(new Date(shift.date).getUTCDay());
+    const consecutiveDays = workedDays.size;
+
+    // Estimated overtime cost (hours over 40 × 1.5 rate, assuming $20/hr base)
+    const BASE_RATE = 20;
+    const overtimeHours = Math.max(0, projectedWeeklyHours - 40);
+    const regularHours = projectedWeeklyHours - overtimeHours;
+    const estimatedCost =
+      regularHours * BASE_RATE + overtimeHours * BASE_RATE * 1.5;
+    const currentCost =
+      Math.min(currentWeeklyHours, 40) * BASE_RATE +
+      Math.max(0, currentWeeklyHours - 40) * BASE_RATE * 1.5;
+    const additionalCost = estimatedCost - currentCost;
+
+    // Staff info
+    const staff = await this.prisma.user.findUnique({
+      where: { id: staffUserId },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        desiredWeeklyHours: true,
+      },
+    });
+
+    const warnings: string[] = [];
+    if (projectedDailyHours > 12)
+      warnings.push(
+        `Daily hours would be ${projectedDailyHours.toFixed(1)}h (exceeds 12h hard cap)`,
+      );
+    else if (projectedDailyHours > 8)
+      warnings.push(
+        `Daily hours would be ${projectedDailyHours.toFixed(1)}h (exceeds 8h guideline)`,
+      );
+    if (projectedWeeklyHours >= 40)
+      warnings.push(
+        `Weekly hours would be ${projectedWeeklyHours.toFixed(1)}h (overtime)`,
+      );
+    else if (projectedWeeklyHours >= 35)
+      warnings.push(
+        `Weekly hours would be ${projectedWeeklyHours.toFixed(1)}h (approaching 40h)`,
+      );
+    if (consecutiveDays >= 7)
+      warnings.push(`Would be 7th consecutive day (requires override)`);
+    else if (consecutiveDays >= 6)
+      warnings.push(`Would be 6th consecutive day`);
+
+    const blocked = projectedDailyHours > 12 || consecutiveDays >= 7;
+
+    return {
+      staff: staff
+        ? {
+            id: staff.id,
+            name: `${staff.firstName} ${staff.lastName}`,
+            desiredWeeklyHours: staff.desiredWeeklyHours ?? 40,
+          }
+        : null,
+      shift: {
+        id: shift.id,
+        location: shift.location.name,
+        duration: Math.round(shiftDurationHours * 10) / 10,
+      },
+      impact: {
+        currentDailyHours: Math.round(currentDailyHours * 10) / 10,
+        projectedDailyHours: Math.round(projectedDailyHours * 10) / 10,
+        currentWeeklyHours: Math.round(currentWeeklyHours * 10) / 10,
+        projectedWeeklyHours: Math.round(projectedWeeklyHours * 10) / 10,
+        consecutiveDays,
+        overtimeHours: Math.round(overtimeHours * 10) / 10,
+        estimatedWeeklyCost: Math.round(estimatedCost * 100) / 100,
+        additionalCost: Math.round(additionalCost * 100) / 100,
+      },
+      warnings,
+      blocked,
+    };
   }
 }

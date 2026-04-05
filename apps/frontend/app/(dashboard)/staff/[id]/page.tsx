@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from "sonner";
 import { useParams, useRouter } from "next/navigation";
 import {
   useGetStaffDetailQuery,
@@ -258,9 +259,11 @@ function ProfileCard({ member }: { member: StaffDetail }) {
         },
       }).unwrap();
       setFeedback({ type: "success", msg: "Profile updated" });
+      toast.success("Profile updated");
       setEditing(false);
     } catch {
       setFeedback({ type: "error", msg: "Failed to update profile" });
+      toast.error("Failed to update profile");
     }
   }
 
@@ -270,8 +273,9 @@ function ProfileCard({ member }: { member: StaffDetail }) {
         id: member.id,
         body: { isActive: !member.isActive },
       }).unwrap();
-    } catch {
-      // handled by RTK
+      toast.success(member.isActive ? "Staff deactivated" : "Staff activated");
+    } catch (err: any) {
+      toast.error(err?.data?.message || "Failed to update status");
     }
   }
 

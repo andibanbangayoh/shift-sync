@@ -1,7 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useGetAuditLogsQuery, type AuditLogEntry } from "@/store/api/auditApi";
+import {
+  useGetAuditLogsQuery,
+  useLazyExportAuditCsvQuery,
+  type AuditLogEntry,
+} from "@/store/api/auditApi";
+import { useAppSelector } from "@/store/store";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,6 +33,7 @@ import {
   Eye,
   User,
   ArrowRight,
+  Download,
 } from "lucide-react";
 
 const ACTION_LABELS: Record<string, { label: string; color: string }> = {
@@ -152,6 +158,8 @@ export default function AuditPage() {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [detailLog, setDetailLog] = useState<AuditLogEntry | null>(null);
+  const [exportCsv, { isFetching: exporting }] = useLazyExportAuditCsvQuery();
+  const user = useAppSelector((s) => s.auth.user);
 
   const { data, isLoading } = useGetAuditLogsQuery({
     ...(entityType !== "all" && { entityType }),
@@ -165,17 +173,48 @@ export default function AuditPage() {
   const logs = data?.data ?? [];
   const meta = data?.meta;
 
+  async function handleExport() {
+    const result = await exportCsv({
+      ...(entityType !== "all" && { entityType }),
+      ...(fromDate && { from: fromDate }),
+      ...(toDate && { to: toDate }),
+      ...(action !== "all" && { action }),
+    });
+    if (result.data) {
+      const blob = new Blob([result.data], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `audit-logs-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <ClipboardList className="h-6 w-6 text-primary" />
-          Audit Trail
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Track all schedule changes, assignments, and staff actions
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <ClipboardList className="h-6 w-6 text-primary" />
+            Audit Trail
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Track all schedule changes, assignments, and staff actions
+          </p>
+        </div>
+        {user?.role === "ADMIN" && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExport}
+            disabled={exporting}
+          >
+            <Download className="h-4 w-4 mr-1.5" />
+            {exporting ? "Exporting…" : "Export CSV"}
+          </Button>
+        )}
       </div>
 
       {/* Filters */}

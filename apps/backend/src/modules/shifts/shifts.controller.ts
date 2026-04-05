@@ -57,7 +57,7 @@ export class ShiftsController {
     return this.shiftsService.getSkills();
   }
 
-  /** GET /api/shifts/eligible-staff?locationId=x&skillId=y&shiftId=z */
+  /** GET /api/shifts/eligible-staff?locationId=x&skillId=y&shiftId=z&date=..&startTime=..&endTime=.. */
   @Get("eligible-staff")
   @UseGuards(RolesGuard)
   @Roles("ADMIN" as any, "MANAGER" as any)
@@ -66,6 +66,9 @@ export class ShiftsController {
     @Query("locationId") locationId: string,
     @Query("skillId") skillId?: string,
     @Query("shiftId") shiftId?: string,
+    @Query("date") date?: string,
+    @Query("startTime") startTime?: string,
+    @Query("endTime") endTime?: string,
   ) {
     return this.shiftsService.getEligibleStaff(
       user.id,
@@ -73,6 +76,9 @@ export class ShiftsController {
       locationId,
       skillId,
       shiftId,
+      date,
+      startTime,
+      endTime,
     );
   }
 
@@ -154,5 +160,22 @@ export class ShiftsController {
     @Param("id") id: string,
   ) {
     return this.shiftsService.deleteShift(user.id, user.role as any, id);
+  }
+
+  /** GET /api/shifts/:id/what-if/:userId — preview assignment impact. */
+  @Get(":id/what-if/:userId")
+  @UseGuards(RolesGuard)
+  @Roles("ADMIN" as any, "MANAGER" as any)
+  whatIfAssign(
+    @CurrentUser() user: { id: string; role: string },
+    @Param("id") shiftId: string,
+    @Param("userId") staffUserId: string,
+  ) {
+    return this.shiftsService.whatIfAssign(
+      user.id,
+      user.role as any,
+      shiftId,
+      staffUserId,
+    );
   }
 }

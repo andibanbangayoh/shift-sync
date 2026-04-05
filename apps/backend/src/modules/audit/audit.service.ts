@@ -153,4 +153,78 @@ export class AuditService {
       meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
     };
   }
+
+  /**
+   * Export audit logs as CSV text.
+   */
+  async exportCsv(
+    callerId: string,
+    callerRole: UserRole,
+    filters: {
+      entityType?: string;
+      from?: string;
+      to?: string;
+      action?: string;
+    },
+  ): Promise<string> {
+    const where: any = {};
+    if (filters.entityType) where.entityType = filters.entityType;
+    if (filters.action) where.action = filters.action;
+    if (filters.from || filters.to) {
+      where.createdAt = {};
+      if (filters.from) where.createdAt.gte = new Date(filters.from);
+      if (filters.to) where.createdAt.lte = new Date(filters.to);
+    }
+
+    const logs = await this.prisma.auditLog.findMany({
+      where,
+      select: {
+        id: true,
+        action: true,
+        entityType: true,
+        entityId: true,
+        beforeState: true,
+        afterState: true,
+        reason: true,
+        createdAt: true,
+        user: {
+          select: {
+            firstName: true,
+            lastName: true,
+            email: true,
+            role: true,
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 10000,
+    });
+
+    const escCsv = (v: any) => {
+      if (v === null || v === undefined) return "";
+      const s = typeof v === "object" ? JSON.stringify(v) : String(v);
+      return s.includes(",") || s.includes('"') || s.includes("\n")
+        ? `"${s.replace(/"/g, '""')}"`
+        : s;
+    };
+
+    const header =
+      "Date,Action,Entity Type,Entity ID,User,Email,Role,Before State,After State,Reason";
+    const rows = logs.map((l) =>
+      [
+        l.createdAt.toISOString(),
+        l.action,
+        l.entityType,
+        l.entityId,
+        `${l.user.firstName} ${l.user.lastName}`,
+        l.user.email,
+        l.user.role,
+        escCsv(l.beforeState),
+        escCsv(l.afterState),
+        escCsv(l.reason),
+      ].join(","),
+    );
+
+    return [header, ...rows].join("\n");
+  }
 }

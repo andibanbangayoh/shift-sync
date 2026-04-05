@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { toast } from "sonner";
 import { useSelector } from "react-redux";
 import type { RootState } from "@/store/store";
 import {
@@ -10,6 +11,10 @@ import {
   useClearMyDayAvailabilityMutation,
   useAddMySkillMutation,
   useRemoveMySkillMutation,
+  useListMyExceptionsQuery,
+  useAddMyExceptionMutation,
+  useRemoveMyExceptionMutation,
+  type AvailabilityException,
 } from "@/store/api/authApi";
 import { useGetSkillsQuery } from "@/store/api/shiftsApi";
 import { Card } from "@/components/ui/card";
@@ -89,6 +94,8 @@ export default function SettingsPage() {
       )}
 
       {profile.role === "STAFF" && <AvailabilityCard profile={profile} />}
+
+      {profile.role === "STAFF" && <ExceptionsCard />}
     </div>
   );
 }
@@ -122,9 +129,10 @@ function ProfileCard({
       }).unwrap();
       setEditing(false);
       setSaved(true);
+      toast.success("Profile updated");
       setTimeout(() => setSaved(false), 2000);
     } catch {
-      // Error already shown via RTK Query
+      toast.error("Failed to update profile");
     }
   }
 
@@ -270,9 +278,10 @@ function NotificationCard({
     try {
       await updateSettings({ [field]: !profile[field] }).unwrap();
       setSaved(true);
+      toast.success("Notification preferences updated");
       setTimeout(() => setSaved(false), 2000);
     } catch {
-      // handled by RTK
+      toast.error("Failed to update notification preferences");
     }
   }
 
@@ -378,9 +387,10 @@ function DesiredHoursCard({
       }).unwrap();
       setEditing(false);
       setSaved(true);
+      toast.success("Desired hours updated");
       setTimeout(() => setSaved(false), 2000);
     } catch {
-      // handled
+      toast.error("Failed to update desired hours");
     }
   }
 
@@ -471,8 +481,9 @@ function SkillsCard({
     try {
       await addSkill(selectedSkill).unwrap();
       setSelectedSkill("");
+      toast.success("Skill added");
     } catch {
-      // handled by RTK
+      toast.error("Failed to add skill");
     }
   }
 
@@ -494,7 +505,12 @@ function SkillsCard({
             >
               {s.skill.name}
               <button
-                onClick={() => removeSkill(s.skill.id)}
+                onClick={() =>
+                  removeSkill(s.skill.id)
+                    .unwrap()
+                    .then(() => toast.success("Skill removed"))
+                    .catch(() => toast.error("Failed to remove skill"))
+                }
                 className="ml-0.5 rounded-full hover:bg-muted p-0.5"
               >
                 <X className="h-3 w-3" />
@@ -584,8 +600,16 @@ function AvailabilityCard({
             saving={saving}
             onSet={(startTime, endTime) =>
               setDay({ dayOfWeek: dayIdx, startTime, endTime })
+                .unwrap()
+                .then(() => toast.success("Availability updated"))
+                .catch(() => toast.error("Failed to update availability"))
             }
-            onClear={() => clearDay(dayIdx)}
+            onClear={() =>
+              clearDay(dayIdx)
+                .unwrap()
+                .then(() => toast.success("Availability cleared"))
+                .catch(() => toast.error("Failed to clear availability"))
+            }
           />
         ))}
       </div>
@@ -733,6 +757,190 @@ function DayRow({
         <span className="text-xs text-muted-foreground">Off</span>
       )}
     </div>
+  );
+}
+
+// ─── Availability Exceptions Card ──────────────────────────────────────────────
+
+function ExceptionsCard() {
+  const { data: exceptions = [] } = useListMyExceptionsQuery();
+  const [addException, { isLoading: adding }] = useAddMyExceptionMutation();
+  const [removeException] = useRemoveMyExceptionMutation();
+
+  const [date, setDate] = useState("");
+  const [isAvailable, setIsAvailable] = useState(false);
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
+  const [reason, setReason] = useState("");
+
+  const handleAdd = async () => {
+    if (!date) return;
+    try {
+      await addException({
+        date,
+        isAvailable,
+        ...(startTime && endTime ? { startTime, endTime } : {}),
+        ...(reason ? { reason } : {}),
+      }).unwrap();
+      toast.success("Exception added");
+      setDate("");
+      setStartTime("");
+      setEndTime("");
+      setReason("");
+    } catch (err: any) {
+      toast.error(err?.data?.message || "Failed to add exception");
+    }
+  };
+
+  const handleRemove = async (id: string) => {
+    try {
+      await removeException(id).unwrap();
+      toast.success("Exception removed");
+    } catch {
+      toast.error("Failed to remove exception");
+    }
+  };
+
+  return (
+    <Card className="p-6">
+      <div className="flex items-center gap-2 mb-4">
+        <CalendarDays className="h-5 w-5 text-primary" />
+        <h3 className="font-semibold">Date Exceptions</h3>
+      </div>
+      <p className="text-sm text-muted-foreground mb-4">
+        Add one-off date overrides to mark specific dates as unavailable (e.g.
+        vacation, appointment) or available outside your regular schedule.
+      </p>
+
+      {/* Existing exceptions */}
+      {exceptions.length > 0 && (
+        <div className="space-y-2 mb-4">
+          {exceptions.map((ex) => (
+            <div
+              key={ex.id}
+              className="flex items-center justify-between rounded-md border p-3"
+            >
+              <div className="flex items-center gap-3">
+                <Badge variant={ex.isAvailable ? "default" : "destructive"}>
+                  {ex.isAvailable ? "Available" : "Unavailable"}
+                </Badge>
+                <span className="text-sm font-medium">
+                  {new Date(ex.date).toLocaleDateString("en-US", {
+                    weekday: "short",
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                    timeZone: "UTC",
+                  })}
+                </span>
+                {ex.startTime && ex.endTime && (
+                  <span className="text-xs text-muted-foreground">
+                    {ex.startTime} – {ex.endTime}
+                  </span>
+                )}
+                {ex.reason && (
+                  <span className="text-xs text-muted-foreground italic">
+                    {ex.reason}
+                  </span>
+                )}
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                onClick={() => handleRemove(ex.id)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Add new exception */}
+      <Separator className="my-4" />
+      <div className="space-y-3">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <Label className="text-xs mb-1">Date</Label>
+            <Input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              min={new Date().toISOString().split("T")[0]}
+              className="h-9"
+            />
+          </div>
+          <div>
+            <Label className="text-xs mb-1">Type</Label>
+            <div className="flex items-center gap-2 h-9">
+              <Button
+                variant={!isAvailable ? "default" : "outline"}
+                size="sm"
+                className="flex-1 h-8"
+                onClick={() => setIsAvailable(false)}
+              >
+                Unavailable
+              </Button>
+              <Button
+                variant={isAvailable ? "default" : "outline"}
+                size="sm"
+                className="flex-1 h-8"
+                onClick={() => setIsAvailable(true)}
+              >
+                Available
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        {isAvailable && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <Label className="text-xs mb-1">Start Time (optional)</Label>
+              <Input
+                type="time"
+                value={startTime}
+                onChange={(e) => setStartTime(e.target.value)}
+                className="h-9"
+              />
+            </div>
+            <div>
+              <Label className="text-xs mb-1">End Time (optional)</Label>
+              <Input
+                type="time"
+                value={endTime}
+                onChange={(e) => setEndTime(e.target.value)}
+                className="h-9"
+              />
+            </div>
+          </div>
+        )}
+
+        <div>
+          <Label className="text-xs mb-1">Reason (optional)</Label>
+          <Input
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="e.g. Doctor appointment"
+            className="h-9"
+          />
+        </div>
+
+        <Button
+          onClick={handleAdd}
+          disabled={!date || adding}
+          className="w-full"
+        >
+          {adding ? (
+            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+          ) : (
+            <Plus className="h-4 w-4 mr-2" />
+          )}
+          Add Exception
+        </Button>
+      </div>
+    </Card>
   );
 }
 

@@ -209,6 +209,69 @@ export class AuthService {
     return { success: true };
   }
 
+  // ── Availability Exceptions (one-off date overrides) ──────────────────
+
+  async listMyExceptions(userId: string) {
+    return this.prisma.availabilityException.findMany({
+      where: { userId, date: { gte: new Date() } },
+      orderBy: { date: "asc" },
+    });
+  }
+
+  async addMyException(
+    userId: string,
+    data: {
+      date: string;
+      isAvailable: boolean;
+      startTime?: string;
+      endTime?: string;
+      reason?: string;
+    },
+  ) {
+    // Upsert by userId + date
+    const dateObj = new Date(data.date);
+    dateObj.setUTCHours(0, 0, 0, 0);
+
+    const existing = await this.prisma.availabilityException.findFirst({
+      where: { userId, date: dateObj },
+    });
+
+    if (existing) {
+      return this.prisma.availabilityException.update({
+        where: { id: existing.id },
+        data: {
+          isAvailable: data.isAvailable,
+          startTime: data.startTime ?? null,
+          endTime: data.endTime ?? null,
+          reason: data.reason ?? null,
+        },
+      });
+    }
+
+    return this.prisma.availabilityException.create({
+      data: {
+        userId,
+        date: dateObj,
+        isAvailable: data.isAvailable,
+        startTime: data.startTime ?? null,
+        endTime: data.endTime ?? null,
+        reason: data.reason ?? null,
+      },
+    });
+  }
+
+  async removeMyException(userId: string, exceptionId: string) {
+    const record = await this.prisma.availabilityException.findFirst({
+      where: { id: exceptionId, userId },
+    });
+    if (!record) throw new NotFoundException("Exception not found");
+
+    await this.prisma.availabilityException.delete({
+      where: { id: exceptionId },
+    });
+    return { success: true };
+  }
+
   async addMySkill(userId: string, skillId: string) {
     const skill = await this.prisma.skill.findUnique({
       where: { id: skillId },

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { toast } from "sonner";
 import { useAppSelector } from "@/store/store";
 import {
   useListShiftsQuery,
@@ -215,8 +216,9 @@ export function WeeklyCalendar() {
           version: shift.version,
         },
       }).unwrap();
+      toast.success("Shift moved");
     } catch {
-      // Revert will happen via re-fetch
+      toast.error("Failed to move shift");
     }
   }
 

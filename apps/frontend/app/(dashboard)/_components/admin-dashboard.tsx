@@ -6,7 +6,6 @@ import { OvertimeWidget } from "./overtime-widget";
 import { UpcomingShiftsWidget } from "./upcoming-shifts-widget";
 import { NotificationsWidget } from "./notifications-widget";
 import { ActionLink } from "@/components/ui/action-link";
-import { StatusRow } from "@/components/ui/status-row";
 import {
   Card,
   CardContent,
@@ -87,8 +86,8 @@ export function AdminDashboard({ user }: { user: AuthUser }) {
         <NotificationsWidget notifications={stats?.recentNotifications ?? []} />
       </div>
 
-      {/* Quick Actions + System Status */}
-      <div className="grid gap-4 md:grid-cols-2">
+      {/* Quick Actions */}
+      <div>
         <Card>
           <CardHeader>
             <CardTitle>Quick Actions</CardTitle>
@@ -110,18 +109,6 @@ export function AdminDashboard({ user }: { user: AuthUser }) {
               icon={<TrendingUp className="h-4 w-4" />}
               label="View Analytics"
             />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>System Status</CardTitle>
-            <CardDescription>Platform health overview</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <StatusRow label="Database" status="operational" />
-            <StatusRow label="Real-time Events" status="operational" />
-            <StatusRow label="Scheduling Engine" status="operational" />
           </CardContent>
         </Card>
       </div>

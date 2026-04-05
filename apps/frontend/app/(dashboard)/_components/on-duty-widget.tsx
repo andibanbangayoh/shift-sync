@@ -30,6 +30,7 @@ export function OnDutyWidget({ items }: OnDutyWidgetProps) {
               const until = new Date(item.endTime).toLocaleTimeString("en-US", {
                 hour: "numeric",
                 minute: "2-digit",
+                timeZone: item.location.timezone,
               });
               return (
                 <div

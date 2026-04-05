@@ -44,19 +44,25 @@ export function ShiftCard({
 }: ShiftCardProps) {
   const isFull = shift.assignments.length >= shift.headcount;
 
+  // 48h edit cutoff: published shift starting within 48h is locked
+  const isLocked =
+    shift.status === "PUBLISHED" &&
+    new Date(shift.startTime).getTime() - Date.now() < 48 * 3600000;
+  const isDraggable = canEdit && !isLocked;
+
   return (
     <div
       className={`group relative cursor-pointer rounded-md border border-l-4 p-2 text-xs shadow-sm transition-all hover:shadow-md ${statusColors[shift.status] || "bg-white"}`}
-      draggable={canEdit}
+      draggable={isDraggable}
       onDragStart={(e) => {
-        if (!canEdit) return;
+        if (!isDraggable) return;
         e.dataTransfer.setData("shiftId", shift.id);
         e.dataTransfer.effectAllowed = "move";
         onDragStart?.(shift);
       }}
       onClick={() => onClick?.(shift)}
     >
-      {canEdit && (
+      {isDraggable && (
         <GripVertical className="absolute right-0.5 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
       )}
 

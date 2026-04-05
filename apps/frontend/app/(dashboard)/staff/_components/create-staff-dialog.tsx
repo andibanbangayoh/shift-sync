@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from "sonner";
 import { useCreateStaffMutation } from "@/store/api/staffApi";
 import {
   Dialog,
@@ -72,16 +73,18 @@ export function CreateStaffDialog({ open, onOpenChange, callerRole }: Props) {
         ...(phone && { phone }),
         ...(desiredHours && { desiredWeeklyHours: parseFloat(desiredHours) }),
       }).unwrap();
-      setSuccess(
-        `${result.firstName} ${result.lastName} has been added as ${role}.`,
-      );
+      const msg = `${result.firstName} ${result.lastName} has been added as ${role}.`;
+      setSuccess(msg);
+      toast.success(msg);
       setTimeout(() => {
         reset();
         onOpenChange(false);
       }, 1500);
     } catch (err: any) {
       const msg = err?.data?.message || "Failed to create staff member";
-      setError(Array.isArray(msg) ? msg.join(", ") : msg);
+      const errStr = Array.isArray(msg) ? msg.join(", ") : msg;
+      setError(errStr);
+      toast.error(errStr);
     }
   }
 

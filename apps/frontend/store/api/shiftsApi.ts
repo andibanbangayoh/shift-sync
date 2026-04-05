@@ -108,14 +108,24 @@ export const shiftsApi = baseApi.injectEndpoints({
 
     getEligibleStaff: builder.query<
       EligibleStaff[],
-      { locationId: string; skillId?: string; shiftId?: string }
+      {
+        locationId: string;
+        skillId?: string;
+        shiftId?: string;
+        date?: string;
+        startTime?: string;
+        endTime?: string;
+      }
     >({
-      query: ({ locationId, skillId, shiftId }) => ({
+      query: ({ locationId, skillId, shiftId, date, startTime, endTime }) => ({
         url: "/shifts/eligible-staff",
         params: {
           locationId,
           ...(skillId && { skillId }),
           ...(shiftId && { shiftId }),
+          ...(date && { date }),
+          ...(startTime && { startTime }),
+          ...(endTime && { endTime }),
         },
       }),
     }),
@@ -170,6 +180,28 @@ export const shiftsApi = baseApi.injectEndpoints({
       query: (id) => ({ url: `/shifts/${id}`, method: "DELETE" }),
       invalidatesTags: ["Shifts", "Dashboard"],
     }),
+
+    whatIfAssign: builder.query<
+      {
+        staff: { id: string; name: string; desiredWeeklyHours: number } | null;
+        shift: { id: string; location: string; duration: number };
+        impact: {
+          currentDailyHours: number;
+          projectedDailyHours: number;
+          currentWeeklyHours: number;
+          projectedWeeklyHours: number;
+          consecutiveDays: number;
+          overtimeHours: number;
+          estimatedWeeklyCost: number;
+          additionalCost: number;
+        };
+        warnings: string[];
+        blocked: boolean;
+      },
+      { shiftId: string; userId: string }
+    >({
+      query: ({ shiftId, userId }) => `/shifts/${shiftId}/what-if/${userId}`,
+    }),
   }),
 });
 
@@ -184,4 +216,5 @@ export const {
   useAssignStaffMutation,
   useUnassignStaffMutation,
   useDeleteShiftMutation,
+  useLazyWhatIfAssignQuery,
 } = shiftsApi;

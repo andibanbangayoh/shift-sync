@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from "sonner";
 import { useAppSelector } from "@/store/store";
 import {
   Dialog,
@@ -41,6 +42,7 @@ import {
   useUnassignStaffMutation,
   useDeleteShiftMutation,
   useGetEligibleStaffQuery,
+  useLazyWhatIfAssignQuery,
 } from "@/store/api/shiftsApi";
 import {
   useCreateSwapMutation,
@@ -93,6 +95,8 @@ export function ShiftDetailDialog({
   const [unassignStaff] = useUnassignStaffMutation();
   const [deleteShift, { isLoading: deleting }] = useDeleteShiftMutation();
   const [createSwap, { isLoading: creatingSwap }] = useCreateSwapMutation();
+  const [fetchWhatIf, { data: whatIfData, isFetching: loadingWhatIf }] =
+    useLazyWhatIfAssignQuery();
 
   const { data: eligibleStaff } = useGetEligibleStaffQuery(
     {
@@ -116,6 +120,12 @@ export function ShiftDetailDialog({
 
   const isFull = shift.assignments.length >= shift.headcount;
 
+  // 48-hour edit cutoff: published shift starting within 48h is locked
+  const isWithin48h =
+    shift.status === "PUBLISHED" &&
+    new Date(shift.startTime).getTime() - Date.now() < 48 * 3600000;
+  const effectiveCanEdit = canEdit && !isWithin48h;
+
   // Staff swap/drop: find the current user's assignment in this shift
   const myAssignment =
     user && !canEdit
@@ -132,9 +142,12 @@ export function ShiftDetailDialog({
         type: "DROP",
       }).unwrap();
       setSwapSuccess("Drop request submitted! A manager will review it.");
+      toast.success("Drop request submitted");
     } catch (err: any) {
       const msg = err?.data?.message || "Failed to submit drop request";
-      setError(Array.isArray(msg) ? msg.join(", ") : msg);
+      const errStr = Array.isArray(msg) ? msg.join(", ") : msg;
+      setError(errStr);
+      toast.error(errStr);
     }
   }
 
@@ -151,10 +164,13 @@ export function ShiftDetailDialog({
       setSwapSuccess(
         "Swap request submitted! The target staff member will be notified.",
       );
+      toast.success("Swap request submitted");
       setShowSwapPicker(false);
     } catch (err: any) {
       const msg = err?.data?.message || "Failed to submit swap request";
-      setError(Array.isArray(msg) ? msg.join(", ") : msg);
+      const errStr = Array.isArray(msg) ? msg.join(", ") : msg;
+      setError(errStr);
+      toast.error(errStr);
     }
   }
 
@@ -166,8 +182,12 @@ export function ShiftDetailDialog({
         id: shift.id,
         body: { status: "PUBLISHED", version: shift.version },
       }).unwrap();
+      toast.success("Shift published");
+      onOpenChange(false);
     } catch (err: any) {
-      setError(err?.data?.message || "Failed to publish");
+      const errMsg = err?.data?.message || "Failed to publish";
+      setError(errMsg);
+      toast.error(errMsg);
     }
   }
 
@@ -179,8 +199,12 @@ export function ShiftDetailDialog({
         id: shift.id,
         body: { status: "DRAFT", version: shift.version },
       }).unwrap();
+      toast.success("Shift unpublished");
+      onOpenChange(false);
     } catch (err: any) {
-      setError(err?.data?.message || "Failed to unpublish");
+      const errMsg = err?.data?.message || "Failed to unpublish";
+      setError(errMsg);
+      toast.error(errMsg);
     }
   }
 
@@ -189,9 +213,12 @@ export function ShiftDetailDialog({
     setError("");
     try {
       await deleteShift(shift.id).unwrap();
+      toast.success("Shift deleted");
       onOpenChange(false);
     } catch (err: any) {
-      setError(err?.data?.message || "Failed to delete shift");
+      const errMsg = err?.data?.message || "Failed to delete shift";
+      setError(errMsg);
+      toast.error(errMsg);
     }
   }
 
@@ -207,6 +234,9 @@ export function ShiftDetailDialog({
       }).unwrap();
       if (result.overtimeWarning) {
         setWarning(result.overtimeWarning);
+        toast.warning("Overtime", { description: result.overtimeWarning });
+      } else {
+        toast.success("Staff assigned");
       }
       setSelectedUserId("");
       setAssigningStaff(false);
@@ -223,6 +253,7 @@ export function ShiftDetailDialog({
         setNeedsOverride(false);
         setError(errStr);
       }
+      toast.error(errStr);
     }
   }
 
@@ -234,8 +265,11 @@ export function ShiftDetailDialog({
         shiftId: shift.id,
         assignmentId,
       }).unwrap();
+      toast.success("Staff removed from shift");
     } catch (err: any) {
-      setError(err?.data?.message || "Failed to remove assignment");
+      const errMsg = err?.data?.message || "Failed to remove assignment";
+      setError(errMsg);
+      toast.error(errMsg);
     }
   }
 
@@ -336,7 +370,7 @@ export function ShiftDetailDialog({
                         </p>
                       </div>
                     </div>
-                    {canEdit && (
+                    {effectiveCanEdit && (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -352,7 +386,7 @@ export function ShiftDetailDialog({
             )}
 
             {/* Assign staff inline */}
-            {canEdit && !isFull && (
+            {effectiveCanEdit && !isFull && (
               <div className="mt-3">
                 {!assigningStaff ? (
                   <Button
@@ -368,7 +402,11 @@ export function ShiftDetailDialog({
                   <div className="space-y-2 rounded-md border p-3 bg-muted/30">
                     <Select
                       value={selectedUserId}
-                      onValueChange={setSelectedUserId}
+                      onValueChange={(v) => {
+                        setSelectedUserId(v);
+                        if (v && shift)
+                          fetchWhatIf({ shiftId: shift.id, userId: v });
+                      }}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Select staff member" />
@@ -429,6 +467,77 @@ export function ShiftDetailDialog({
                         />
                       </div>
                     )}
+                    {/* What-if impact preview */}
+                    {selectedUserId && whatIfData && !loadingWhatIf && (
+                      <div
+                        className={`rounded-md border p-2.5 text-xs space-y-1 ${whatIfData.blocked ? "border-destructive bg-destructive/5" : whatIfData.warnings.length > 0 ? "border-amber-300 bg-amber-50" : "border-green-300 bg-green-50"}`}
+                      >
+                        <p className="font-medium text-muted-foreground">
+                          Impact Preview
+                        </p>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
+                          <span className="text-muted-foreground">
+                            Daily hours:
+                          </span>
+                          <span>
+                            {whatIfData.impact.currentDailyHours}h →{" "}
+                            <strong>
+                              {whatIfData.impact.projectedDailyHours}h
+                            </strong>
+                          </span>
+                          <span className="text-muted-foreground">
+                            Weekly hours:
+                          </span>
+                          <span>
+                            {whatIfData.impact.currentWeeklyHours}h →{" "}
+                            <strong>
+                              {whatIfData.impact.projectedWeeklyHours}h
+                            </strong>
+                          </span>
+                          <span className="text-muted-foreground">
+                            Consecutive days:
+                          </span>
+                          <span>
+                            <strong>{whatIfData.impact.consecutiveDays}</strong>
+                          </span>
+                          {whatIfData.impact.overtimeHours > 0 && (
+                            <>
+                              <span className="text-muted-foreground">
+                                Overtime hours:
+                              </span>
+                              <span className="text-amber-700 font-medium">
+                                {whatIfData.impact.overtimeHours}h
+                              </span>
+                            </>
+                          )}
+                          <span className="text-muted-foreground">
+                            Cost impact:
+                          </span>
+                          <span>
+                            +${whatIfData.impact.additionalCost.toFixed(2)}
+                          </span>
+                        </div>
+                        {whatIfData.warnings.map((w, i) => (
+                          <p
+                            key={i}
+                            className="text-amber-700 flex items-center gap-1"
+                          >
+                            <AlertTriangle className="h-3 w-3 shrink-0" /> {w}
+                          </p>
+                        ))}
+                        {whatIfData.blocked && (
+                          <p className="text-destructive font-medium">
+                            Assignment blocked — requires override
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    {selectedUserId && loadingWhatIf && (
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground p-2">
+                        <Loader2 className="h-3 w-3 animate-spin" /> Analyzing
+                        impact…
+                      </div>
+                    )}
                     <div className="flex gap-2">
                       <Button
                         size="sm"
@@ -460,6 +569,19 @@ export function ShiftDetailDialog({
               </div>
             )}
           </div>
+
+          {/* 48h cutoff notice */}
+          {canEdit && isWithin48h && (
+            <Card className="p-3 border-amber-300 bg-amber-50">
+              <div className="flex items-start gap-2">
+                <Clock className="h-4 w-4 text-amber-600 mt-0.5" />
+                <p className="text-sm text-amber-700">
+                  This published shift starts within 48 hours and cannot be
+                  edited.
+                </p>
+              </div>
+            </Card>
+          )}
 
           {/* Error */}
           {error && (
@@ -612,7 +734,7 @@ export function ShiftDetailDialog({
           )}
 
           {/* Actions */}
-          {canEdit && (
+          {effectiveCanEdit && (
             <>
               <Separator />
               <div className="flex gap-2">
